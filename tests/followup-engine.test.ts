@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DAY_MS } from '../src/main/followups/rules'
-import { runFollowUpsOnce, stopSequences } from '../src/main/followups/engine'
+import { deleteEmails, runFollowUpsOnce, stopSequences } from '../src/main/followups/engine'
 import { memoryDb } from './helpers'
 
 const T0 = Date.UTC(2026, 0, 1)
@@ -27,6 +27,13 @@ function setup(enabled = true) {
 const noThreads = async () => ['Me <me@gmail.com>']
 
 describe('runFollowUpsOnce', () => {
+  it('keeps the Re: subject even when the template has its own subject, so the thread holds', async () => {
+    const { db, original } = setup()
+    db.prepare("UPDATE templates SET subject = 'Checking in' WHERE id = 10").run()
+    await runFollowUpsOnce({ db, now: T0 + 4 * DAY_MS, getThreadSenders: noThreads })
+    expect(db.prepare('SELECT subject FROM emails WHERE parent_id = ?').get(original)).toEqual({ subject: 'Re: Quick intro' })
+  })
+
   it('creates a step-1 draft with contact variables and a Re: subject when due', async () => {
     const { db, original } = setup()
     const s = await runFollowUpsOnce({ db, now: T0 + 4 * DAY_MS, getThreadSenders: noThreads })
@@ -86,6 +93,25 @@ describe('runFollowUpsOnce', () => {
     const check = vi.fn(noThreads)
     await runFollowUpsOnce({ db, now: T0 + DAY_MS, getThreadSenders: check })
     expect(check).not.toHaveBeenCalled()
+  })
+})
+
+describe('deleteEmails', () => {
+  it('deleting a follow-up draft stops the sequence so it is not recreated', async () => {
+    const { db, original } = setup()
+    await runFollowUpsOnce({ db, now: T0 + 4 * DAY_MS, getThreadSenders: noThreads })
+    const followUp = (db.prepare('SELECT id FROM emails WHERE parent_id = ?').get(original) as { id: number }).id
+    deleteEmails(db, [followUp])
+    const s = await runFollowUpsOnce({ db, now: T0 + 5 * DAY_MS, getThreadSenders: noThreads })
+    expect(s.draftsCreated).toBe(0)
+    expect(db.prepare('SELECT stop_reason FROM emails WHERE id = ?').get(original)).toEqual({ stop_reason: 'manual' })
+  })
+
+  it('never deletes an email that is being sent', () => {
+    const { db, original } = setup()
+    db.prepare("UPDATE emails SET status = 'sending' WHERE id = ?").run(original)
+    deleteEmails(db, [original])
+    expect(db.prepare('SELECT COUNT(*) AS n FROM emails WHERE id = ?').get(original)).toEqual({ n: 1 })
   })
 })
 

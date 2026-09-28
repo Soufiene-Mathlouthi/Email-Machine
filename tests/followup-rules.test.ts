@@ -70,14 +70,11 @@ describe('classifyThread', () => {
 })
 
 describe('followUpSubject', () => {
-  it('uses Re: <original> when the template subject is blank', () => {
-    expect(followUpSubject('  ', 'Quick intro')).toBe('Re: Quick intro')
+  it('uses Re: <original>', () => {
+    expect(followUpSubject('Quick intro')).toBe('Re: Quick intro')
   })
   it('does not double Re:', () => {
-    expect(followUpSubject('', 'RE: Quick intro')).toBe('RE: Quick intro')
-  })
-  it('prefers the rendered template subject', () => {
-    expect(followUpSubject('Checking in', 'Quick intro')).toBe('Checking in')
+    expect(followUpSubject('RE: Quick intro')).toBe('RE: Quick intro')
   })
 })
 

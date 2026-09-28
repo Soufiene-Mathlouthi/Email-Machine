@@ -58,6 +58,23 @@ export function stopSequences(db: Database.Database, ids: number[], kind: 'repli
   })()
 }
 
+// Deleting a follow-up means "don't follow up", so stop the sequence or the engine would recreate it.
+export function deleteEmails(db: Database.Database, ids: number[]): void {
+  const parentOf = db.prepare("SELECT parent_id FROM emails WHERE id = ? AND status != 'sending'")
+  const del = db.prepare("DELETE FROM emails WHERE id = ? AND status != 'sending'")
+  const stop = db.prepare(
+    "UPDATE emails SET followups_stopped = 1, stop_reason = CASE WHEN stop_reason = '' THEN 'manual' ELSE stop_reason END WHERE id = ?"
+  )
+  db.transaction(() => {
+    for (const id of ids) {
+      const row = parentOf.get(id) as { parent_id: number | null } | undefined
+      if (!row) continue
+      if (row.parent_id !== null) stop.run(row.parent_id)
+      del.run(id)
+    }
+  })()
+}
+
 function varsFor(db: Database.Database, o: OriginalRow): Record<string, string> {
   if (o.contactId) {
     const c = db.prepare('SELECT name, company, role FROM contacts WHERE id = ?').get(o.contactId) as
@@ -113,7 +130,7 @@ function createDueDrafts(db: Database.Database, now: number): number {
   const children = db.prepare(
     'SELECT step, status, sent_at AS sentAt, followups_stopped AS followupsStopped FROM emails WHERE parent_id = ?'
   )
-  const template = db.prepare('SELECT subject, body FROM templates WHERE id = ?')
+  const template = db.prepare('SELECT body FROM templates WHERE id = ?')
   const insert = db.prepare(
     `INSERT INTO emails (account_id, contact_id, job_id, to_email, subject, body, status, parent_id, step, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
@@ -124,12 +141,11 @@ function createDueDrafts(db: Database.Database, now: number): number {
     const kids = (children.all(o.id) as SequenceRow[]).map(asSequence)
     const next = nextFollowUp(asSequence(o), kids, config, now)
     if (!next) continue
-    const tpl = template.get(next.templateId) as { subject: string; body: string } | undefined
+    const tpl = template.get(next.templateId) as { body: string } | undefined
     if (!tpl) continue
-    const vars = varsFor(db, o)
     insert.run(
       o.accountId, o.contactId, o.jobId, o.toEmail,
-      followUpSubject(renderTemplate(tpl.subject, vars), o.subject), renderTemplate(tpl.body, vars),
+      followUpSubject(o.subject), renderTemplate(tpl.body, varsFor(db, o)),
       o.id, next.step, now
     )
     created++

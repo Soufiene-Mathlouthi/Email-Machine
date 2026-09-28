@@ -22,7 +22,7 @@ The **Dashboard** shows a setup checklist until these are done:
 3. **Contacts**: add or import a CSV (`name,email,company,role,notes`). Search by name, email, or company.
 4. **Outbox > New batch**: creates one draft per contact. Filter by status or search, click a row to review/edit, select, *Add to send queue*, then *Start sending*.
 5. **Jobs**: track roles you're applying to. *Create draft* on a job renders a template with the job's title and company and drops the draft in the Outbox for review.
-6. **Settings > Follow-ups**: turn on follow-ups and pick a template for follow-up 1 (and optionally 2) with delays in days. Due follow-ups appear in the Outbox as drafts, threaded as replies. They stop automatically when a reply or bounce is detected (Gmail accounts), or when you select emails and click *Mark replied* / *Stop follow-ups*. Only emails sent after you turn follow-ups on are followed up.
+6. **Settings > Follow-ups**: turn on follow-ups and pick a template for follow-up 1 (and optionally 2) with delays in days. Due follow-ups appear in the Outbox as drafts, threaded as replies (the template's body is used; the subject is always `Re: <original subject>` so Gmail keeps the thread). Deleting a follow-up draft stops follow-ups for that email. They stop automatically when a reply or bounce is detected (Gmail accounts), or when you select emails and click *Mark replied* / *Stop follow-ups*. Only emails sent after you turn follow-ups on are followed up.
 
 ## Structure
 

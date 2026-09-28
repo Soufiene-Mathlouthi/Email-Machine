@@ -107,7 +107,7 @@ function waitForCode(clientId: string, challenge: string, state: string): Promis
     }
     const server: Server = createServer((req, res) => {
       const url = req.url ?? '/'
-      if (!isCallbackRequest(url)) return void res.writeHead(404).end()
+      if (!isCallbackRequest(url, state)) return void res.writeHead(404).end()
       const result = parseCallback(url, state)
       if ('code' in result) {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })

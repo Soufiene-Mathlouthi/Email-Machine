@@ -57,8 +57,8 @@ export function classifyThread(fromHeaders: string[], selfEmail: string): 'repli
   return bounced ? 'bounced' : 'none'
 }
 
-export function followUpSubject(renderedTemplateSubject: string, originalSubject: string): string {
-  if (renderedTemplateSubject.trim()) return renderedTemplateSubject.trim()
+// Always "Re: <original>": Gmail only threads a message when the subject matches.
+export function followUpSubject(originalSubject: string): string {
   const original = originalSubject.trim()
   return /^re:/i.test(original) ? original : `Re: ${original}`
 }

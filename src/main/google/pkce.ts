@@ -35,9 +35,10 @@ export function buildAuthUrl(p: { clientId: string; redirectUri: string; challen
 
 const paramsOf = (url: string): URLSearchParams => new URL(url, 'http://127.0.0.1').searchParams
 
-export function isCallbackRequest(url: string): boolean {
+// Only our own redirect (matching state) may end the flow; anything else is ignored.
+export function isCallbackRequest(url: string, expectedState: string): boolean {
   const q = paramsOf(url)
-  return q.has('code') || q.has('error')
+  return (q.has('code') || q.has('error')) && q.get('state') === expectedState
 }
 
 export function parseCallback(url: string, expectedState: string): { code: string } | { error: string } {

@@ -54,6 +54,7 @@ export default function FollowUpSettings({ config, onSaved }: { config: FollowUp
       <p className="hint">
         Follow-ups land in the Outbox as drafts for review, threaded as replies. They stop when a reply is detected
         (Gmail accounts) or when you use "Mark replied". Only emails sent after you turn this on are followed up.
+        Follow-ups use the template's body; the subject is always "Re: &lt;original subject&gt;" so the thread stays together.
       </p>
       <div className="grid2">
         <label className="field"><span>Follow-up 1 template</span>

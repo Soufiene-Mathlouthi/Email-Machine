@@ -8,7 +8,7 @@ import type {
 import { SERVER_PORT } from '@shared/types'
 import { renderTemplate } from '@shared/template'
 import { decryptSecret, encryptSecret, getApiToken, getDb, getSetting, setSetting } from './db'
-import { stopSequences } from './followups/engine'
+import { deleteEmails, stopSequences } from './followups/engine'
 import { applyFollowUpUpdate, parseFollowUpConfig } from './followups/rules'
 import { runFollowUps } from './followups/scheduler'
 import { cancelGmailConnect, connectGmail, forgetAccountToken } from './google/oauth'
@@ -217,8 +217,7 @@ export function registerIpc(): void {
   })
 
   handle('emails:delete', (ids: number[]) => {
-    const stmt = db.prepare("DELETE FROM emails WHERE id=? AND status != 'sending'")
-    db.transaction(() => ids.forEach((id) => stmt.run(id)))()
+    deleteEmails(db, ids)
     broadcast('emails:changed')
   })
 

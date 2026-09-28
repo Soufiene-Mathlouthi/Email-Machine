@@ -35,9 +35,13 @@ describe('parseCallback', () => {
   it('maps access_denied to a friendly message', () => {
     expect(parseCallback('/?error=access_denied&state=st', 'st')).toEqual({ error: 'Google sign-in was declined.' })
   })
-  it('only treats requests carrying code or error as the callback', () => {
-    expect(isCallbackRequest('/favicon.ico')).toBe(false)
-    expect(isCallbackRequest('/?code=abc&state=st')).toBe(true)
-    expect(isCallbackRequest('/?error=access_denied')).toBe(true)
+  it('only treats requests carrying our state plus code or error as the callback', () => {
+    expect(isCallbackRequest('/favicon.ico', 'st')).toBe(false)
+    expect(isCallbackRequest('/?code=abc&state=st', 'st')).toBe(true)
+    expect(isCallbackRequest('/?error=access_denied&state=st', 'st')).toBe(true)
+  })
+  it('ignores forged or stray requests so they cannot cancel sign-in', () => {
+    expect(isCallbackRequest('/?error=access_denied', 'st')).toBe(false)
+    expect(isCallbackRequest('/?code=abc&state=evil', 'st')).toBe(false)
   })
 })

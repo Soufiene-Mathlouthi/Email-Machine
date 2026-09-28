@@ -33,7 +33,7 @@ export default function Jobs() {
     setMsg(null)
     try {
       await invoke('emails:createForJob', {
-        jobId: job.id, templateId: tpl, accountId: acc, toEmail: toEmail || job.contactEmail, recipientName: toName
+        jobId: job.id, templateId: tpl, accountId: acc, toEmail: toEmail.trim(), recipientName: toName
       })
       setMsg({ jobId: job.id, text: 'Draft created. Review and edit it in the Outbox before sending.', ok: true })
       setDraftFor(null)
@@ -82,7 +82,7 @@ export default function Jobs() {
                 Create draft
               </button>
               <button className="link" onClick={() => setForm(j)}>Edit</button>
-              <button className="link danger" onClick={() => void invoke('jobs:delete', j.id).then(reload)}>Delete</button>
+              <button className="link danger" onClick={() => void invoke('jobs:delete', j.id).then(() => { if (form.id === j.id) setForm(empty); reload() })}>Delete</button>
             </span>
           </div>
           <div className="muted">{fmtDate(j.createdAt)}{j.url && ` · ${j.url}`}</div>

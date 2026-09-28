@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, ArrowRight } from 'lucide-react'
 import type { Account, Contact, OutboxEmail, Template } from '@shared/types'
 import { useData, fmtDate } from '../lib/api'
@@ -14,7 +14,19 @@ function isToday(ms: number | null): boolean {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
 }
 
+function useDayKey(): string {
+  const [day, setDay] = useState(() => new Date().toDateString())
+  useEffect(() => {
+    const now = new Date()
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime()
+    const t = setTimeout(() => setDay(new Date().toDateString()), nextMidnight - now.getTime() + 1000)
+    return () => clearTimeout(t)
+  }, [day])
+  return day
+}
+
 export default function Dashboard({ onNavigate }: { onNavigate: (tab: NavTarget) => void }) {
+  const day = useDayKey()
   const [emails] = useData<OutboxEmail[]>('emails:list', [], ['emails:changed'])
   const [contacts] = useData<Contact[]>('contacts:list', [])
   const [templates] = useData<Template[]>('templates:list', [])
@@ -33,7 +45,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: NavTarget)
     const attempted = sentTotal + failed
     const successRate = attempted ? Math.round((sentTotal / attempted) * 100) : null
     return { sentToday, sentTotal, queued, failed, drafts, successRate }
-  }, [emails])
+  }, [emails, day])
 
   const dailyCapacity = accounts.reduce((sum, a) => sum + a.dailyCap, 0)
 

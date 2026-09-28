@@ -342,6 +342,7 @@ input[type="checkbox"]:focus { box-shadow: none; }
 }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s5); }
 .drawer-head h2 { font-size: 18px; }
+.drawer-alert { margin: 0 0 var(--s4); }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide { from { transform: translateX(24px); opacity: 0; } }
 

@@ -70,10 +70,22 @@ export default function Outbox() {
     setSelected([])
   }
 
+  const [editError, setEditError] = useState('')
+  const liveEditing = editing ? emails.find((e) => e.id === editing.id) : undefined
+  const editLocked = !!editing && (!liveEditing || !canEdit(liveEditing))
+
+  const openEditor = (e: OutboxEmail) => {
+    setEditError('')
+    setEditing(e)
+  }
+
   const saveEdit = async () => {
     if (!editing) return
-    await invoke('emails:update', { id: editing.id, toEmail: editing.toEmail, subject: editing.subject, body: editing.body })
-    setEditing(null)
+    const ok = await invoke<boolean>('emails:update', {
+      id: editing.id, toEmail: editing.toEmail, subject: editing.subject, body: editing.body
+    })
+    if (ok) setEditing(null)
+    else setEditError('Changes not saved: this email was sent or removed while you were reviewing it.')
   }
 
   return (
@@ -177,7 +189,7 @@ export default function Outbox() {
           </thead>
           <tbody>
             {filtered.map((e) => (
-              <tr key={e.id} className={`${canEdit(e) ? 'clickable' : ''} ${selected.includes(e.id) ? 'selected' : ''}`} onClick={() => canEdit(e) && setEditing(e)}>
+              <tr key={e.id} className={`${canEdit(e) ? 'clickable' : ''} ${selected.includes(e.id) ? 'selected' : ''}`} onClick={() => canEdit(e) && openEditor(e)}>
                 <td className="col-check" onClick={(ev) => ev.stopPropagation()}>
                   <input type="checkbox" checked={selected.includes(e.id)} disabled={!canEdit(e)} onChange={() => toggle(e.id)} />
                 </td>
@@ -199,8 +211,13 @@ export default function Outbox() {
           <div className="drawer" role="dialog" aria-label="Review email" onClick={(ev) => ev.stopPropagation()}>
             <div className="drawer-head">
               <h2>Review email</h2>
-              <span className={`badge st-${editing.status}`}>{editing.status}</span>
+              <span className={`badge st-${liveEditing?.status ?? editing.status}`}>{liveEditing?.status ?? 'removed'}</span>
             </div>
+            {(editError || editLocked) && (
+              <div className="status-line bad drawer-alert" role="alert">
+                {editError || 'This email was sent or removed while you were reviewing it, so it can no longer be edited.'}
+              </div>
+            )}
             <label className="field"><span>To</span>
               <input value={editing.toEmail} onChange={(e) => setEditing({ ...editing, toEmail: e.target.value })} /></label>
             <label className="field"><span>Subject</span>
@@ -208,7 +225,7 @@ export default function Outbox() {
             <label className="field"><span>Body</span>
               <textarea rows={16} value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} /></label>
             <div className="row">
-              <button className="btn primary" onClick={() => void saveEdit()}>Save changes</button>
+              <button className="btn primary" disabled={editLocked} onClick={() => void saveEdit()}>Save changes</button>
               <button className="btn" onClick={() => setEditing(null)}>Close</button>
             </div>
           </div>

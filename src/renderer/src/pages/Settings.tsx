@@ -89,7 +89,7 @@ export default function Settings() {
             <span className="actions">
               <button className="link" onClick={() => void test(a.id)}>Test connection</button>
               <button className="link" onClick={() => setForm({ ...a, password: '' })}>Edit</button>
-              <button className="link danger" onClick={() => void invoke('accounts:delete', a.id).then(reloadAccounts)}>Delete</button>
+              <button className="link danger" onClick={() => void invoke('accounts:delete', a.id).then(() => { if (form.id === a.id) setForm(blankAccount); reloadAccounts() })}>Delete</button>
             </span>
           </div>
           {status[a.id] && (

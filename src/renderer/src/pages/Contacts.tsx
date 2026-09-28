@@ -78,7 +78,7 @@ export default function Contacts() {
                 <td>{c.email}</td><td>{c.company}</td><td>{c.role}</td>
                 <td className="actions">
                   <button className="link" onClick={() => setForm(c)}>Edit</button>
-                  <button className="link danger" onClick={() => void invoke('contacts:delete', c.id).then(reload)}>Delete</button>
+                  <button className="link danger" onClick={() => void invoke('contacts:delete', c.id).then(() => { if (form.id === c.id) setForm(empty); reload() })}>Delete</button>
                 </td>
               </tr>
             ))}

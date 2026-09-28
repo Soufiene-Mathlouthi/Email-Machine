@@ -102,7 +102,7 @@ export default function Templates() {
                 <strong>{t.name}</strong>
                 <span className="actions">
                   <button className="link" onClick={() => setForm(t)}>Edit</button>
-                  <button className="link danger" onClick={() => void invoke('templates:delete', t.id).then(reload)}>Delete</button>
+                  <button className="link danger" onClick={() => void invoke('templates:delete', t.id).then(() => { if (form.id === t.id) setForm(empty); reload() })}>Delete</button>
                 </span>
               </div>
               <div className="muted ellipsis-line">{t.subject || '(no subject)'}</div>

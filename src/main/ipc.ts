@@ -167,8 +167,9 @@ export function registerIpc(): void {
       | { subject: string; body: string }
       | undefined
     if (!tpl) throw new Error('Template not found')
-    const to = (p.toEmail || job.contactEmail).trim()
+    const to = p.toEmail.trim() || job.contactEmail.trim()
     if (!to) throw new Error('Enter a recipient email for this job.')
+    if (!/^\S+@\S+\.\S+$/.test(to)) throw new Error(`"${to}" doesn't look like a valid email address.`)
     const name = p.recipientName.trim()
     const vars = { name, firstName: name.split(' ')[0] ?? '', company: job.company, role: job.title, email: to }
     db.prepare(
@@ -177,10 +178,12 @@ export function registerIpc(): void {
     broadcast('emails:changed')
   })
 
-  handle('emails:update', (e: { id: number; toEmail: string; subject: string; body: string }) => {
-    db.prepare("UPDATE emails SET to_email=?, subject=?, body=? WHERE id=? AND status IN ('draft','failed','queued')").run(
+  handle('emails:update', (e: { id: number; toEmail: string; subject: string; body: string }): boolean => {
+    const r = db.prepare("UPDATE emails SET to_email=?, subject=?, body=? WHERE id=? AND status IN ('draft','failed','queued')").run(
       e.toEmail, e.subject, e.body, e.id
     )
+    if (r.changes) broadcast('emails:changed')
+    return r.changes > 0
   })
 
   handle('emails:setStatus', (p: { ids: number[]; status: 'draft' | 'queued' }) => {

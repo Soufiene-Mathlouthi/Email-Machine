@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Account, Job, JobInput, Template } from '@shared/types'
-import { invoke, useData, fmtDate } from '../lib/api'
+import { errorText, invoke, useData, fmtDate } from '../lib/api'
 
 const empty: JobInput = { title: '', company: '', url: '', description: '', contactEmail: '' }
 
@@ -38,8 +38,7 @@ export default function Jobs() {
       setMsg({ jobId: job.id, text: 'Draft created. Review and edit it in the Outbox before sending.', ok: true })
       setDraftFor(null)
     } catch (e) {
-      const text = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
-      setMsg({ jobId: job.id, text, ok: false })
+      setMsg({ jobId: job.id, text: errorText(e), ok: false })
     } finally {
       setBusy(false)
     }

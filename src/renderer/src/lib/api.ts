@@ -18,5 +18,8 @@ export function useData<T>(channel: string, initial: T, events: string[] = []) {
   return [data, load] as const
 }
 
+export const errorText = (e: unknown): string =>
+  e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
+
 export const fmtDate = (ms: number | null): string =>
   ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : ''

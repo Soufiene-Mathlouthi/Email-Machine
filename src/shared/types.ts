@@ -74,9 +74,6 @@ export interface Settings {
   minDelaySec: number
   maxDelaySec: number
   cvPath: string
-  profile: string
-  aiModel: string
-  anthropicKeySet: boolean
   apiToken: string
   serverPort: number
 }
@@ -85,9 +82,6 @@ export interface SettingsInput {
   minDelaySec?: number
   maxDelaySec?: number
   cvPath?: string
-  profile?: string
-  aiModel?: string
-  anthropicKey?: string
 }
 
 export interface QueueState {

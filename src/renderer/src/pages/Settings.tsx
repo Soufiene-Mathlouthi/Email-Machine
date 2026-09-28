@@ -17,7 +17,6 @@ export default function Settings() {
   const [settings, reloadSettings] = useData<SettingsT | null>('settings:get', null)
   const [form, setForm] = useState<AccountInput>(blankAccount)
   const [status, setStatus] = useState<Record<number, string>>({})
-  const [key, setKey] = useState('')
   const [draft, setDraft] = useState<SettingsInput>({})
 
   const saveAccount = async () => {
@@ -34,9 +33,8 @@ export default function Settings() {
   }
 
   const saveSettings = async () => {
-    await invoke('settings:set', { ...draft, ...(key ? { anthropicKey: key } : {}) })
+    await invoke('settings:set', draft)
     setDraft({})
-    setKey('')
     reloadSettings()
   }
 
@@ -113,18 +111,6 @@ export default function Settings() {
               {v.cvPath && <button className="btn" onClick={() => setDraft({ ...draft, cvPath: '' })}>Remove</button>}
             </div></label>
         </div>
-      </section>
-
-      <h2>AI drafting</h2>
-      <section className="panel">
-        <div className="grid2">
-          <label className="field"><span>Anthropic API key {settings.anthropicKeySet && '(saved)'}</span>
-            <input type="password" value={key} placeholder={settings.anthropicKeySet ? 'Enter a new key to replace it' : 'sk-ant-…'} onChange={(e) => setKey(e.target.value)} /></label>
-          <label className="field"><span>Model</span>
-            <input value={v.aiModel} onChange={(e) => setDraft({ ...draft, aiModel: e.target.value })} /></label>
-        </div>
-        <label className="field"><span>About you (skills, experience, projects the AI may mention)</span>
-          <textarea rows={7} value={v.profile} onChange={(e) => setDraft({ ...draft, profile: e.target.value })} /></label>
       </section>
 
       <div className="row">

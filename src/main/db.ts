@@ -92,7 +92,7 @@ export function getApiToken(): string {
   return token
 }
 
-// ---- secrets (SMTP passwords, API keys) ----
+// ---- secrets (SMTP passwords) ----
 // Encrypted with the OS keychain when available (Keychain / DPAPI / libsecret).
 export function encryptSecret(plain: string): string {
   if (!plain) return ''

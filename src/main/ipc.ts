@@ -7,7 +7,6 @@ import type {
 } from '@shared/types'
 import { SERVER_PORT } from '@shared/types'
 import { renderTemplate } from '@shared/template'
-import { draftEmail } from './ai'
 import { decryptSecret, encryptSecret, getApiToken, getDb, getSetting, setSetting } from './db'
 import { verifyAccount } from './mailer'
 import { broadcast, queueState, startQueue, stopQueue } from './queue'
@@ -159,23 +158,6 @@ export function registerIpc(): void {
     broadcast('emails:changed')
   })
 
-  // Draft a tailored email for a scraped/saved job using Claude
-  handle('emails:draftForJob', async (p: { jobId: number; accountId: number; toEmail: string; recipientName: string }) => {
-    const job = db.prepare('SELECT title, company, description, contact_email AS contactEmail FROM jobs WHERE id=?').get(p.jobId) as
-      | { title: string; company: string; description: string; contactEmail: string }
-      | undefined
-    if (!job) throw new Error('Job not found')
-    const to = (p.toEmail || job.contactEmail).trim()
-    if (!to) throw new Error('Enter a recipient email for this job.')
-    const draft = await draftEmail({
-      jobTitle: job.title, company: job.company, jobDescription: job.description, recipientName: p.recipientName
-    })
-    db.prepare(
-      "INSERT INTO emails (account_id, job_id, to_email, subject, body, status, created_at) VALUES (?,?,?,?,?,'draft',?)"
-    ).run(p.accountId, p.jobId, to, draft.subject, draft.body, Date.now())
-    broadcast('emails:changed')
-  })
-
   handle('emails:update', (e: { id: number; toEmail: string; subject: string; body: string }) => {
     db.prepare("UPDATE emails SET to_email=?, subject=?, body=? WHERE id=? AND status IN ('draft','failed','queued')").run(
       e.toEmail, e.subject, e.body, e.id
@@ -205,9 +187,6 @@ export function registerIpc(): void {
     minDelaySec: Number(getSetting('minDelaySec', '30')),
     maxDelaySec: Number(getSetting('maxDelaySec', '120')),
     cvPath: getSetting('cvPath'),
-    profile: getSetting('profile'),
-    aiModel: getSetting('aiModel', 'claude-sonnet-5'),
-    anthropicKeySet: !!decryptSecret(getSetting('anthropicKeyEnc')),
     apiToken: getApiToken(),
     serverPort: SERVER_PORT
   }))
@@ -216,9 +195,6 @@ export function registerIpc(): void {
     if (s.minDelaySec !== undefined) setSetting('minDelaySec', String(s.minDelaySec))
     if (s.maxDelaySec !== undefined) setSetting('maxDelaySec', String(s.maxDelaySec))
     if (s.cvPath !== undefined) setSetting('cvPath', s.cvPath)
-    if (s.profile !== undefined) setSetting('profile', s.profile)
-    if (s.aiModel !== undefined) setSetting('aiModel', s.aiModel)
-    if (s.anthropicKey) setSetting('anthropicKeyEnc', encryptSecret(s.anthropicKey))
   })
 
   handle('dialog:pickCv', async () => {

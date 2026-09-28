@@ -44,6 +44,12 @@ export default function Outbox() {
 
   const canEdit = (e: OutboxEmail) => e.status !== 'sent' && e.status !== 'sending'
   const visibleEditable = filtered.filter(canEdit).map((e) => e.id)
+
+  // Bulk actions must only ever touch rows the user can currently see.
+  useEffect(() => {
+    const allowed = new Set(filtered.filter(canEdit).map((e) => e.id))
+    setSelected((s) => (s.every((id) => allowed.has(id)) ? s : s.filter((id) => allowed.has(id))))
+  }, [filtered])
   const allVisibleSelected = visibleEditable.length > 0 && visibleEditable.every((id) => selected.includes(id))
 
   const toggle = (id: number) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
@@ -130,12 +136,11 @@ export default function Outbox() {
         </section>
       )}
 
-      <div className="chip-row" role="tablist" aria-label="Filter by status">
+      <div className="chip-row" role="group" aria-label="Filter by status">
         {STATUSES.map((s) => (
           <button
             key={s}
-            role="tab"
-            aria-selected={statusFilter === s}
+            aria-pressed={statusFilter === s}
             className={`chip ${statusFilter === s ? 'active' : ''}`}
             onClick={() => setStatusFilter(s)}
           >

@@ -48,9 +48,13 @@ export default function Settings() {
   }
 
   const copyToken = async (token: string) => {
-    await navigator.clipboard.writeText(token)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    try {
+      await navigator.clipboard.writeText(token)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // token text stays selectable for manual copy
+    }
   }
 
   if (!settings) return null

@@ -15,7 +15,7 @@ export default function Jobs() {
   const [accountId, setAccountId] = useState(0)
   const [templateId, setTemplateId] = useState(0)
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState<{ jobId: number; text: string; ok: boolean } | null>(null)
 
   const save = async () => {
     if (!form.title.trim() && !form.description.trim()) return
@@ -27,18 +27,19 @@ export default function Jobs() {
   const createDraft = async (job: Job) => {
     const acc = accountId || accounts[0]?.id
     const tpl = templateId || templates[0]?.id
-    if (!acc) return setMsg('Add an email account in Settings first.')
-    if (!tpl) return setMsg('Add a template first.')
+    if (!acc) return setMsg({ jobId: job.id, text: 'Add an email account in Settings first.', ok: false })
+    if (!tpl) return setMsg({ jobId: job.id, text: 'Add a template first.', ok: false })
     setBusy(true)
-    setMsg('')
+    setMsg(null)
     try {
       await invoke('emails:createForJob', {
         jobId: job.id, templateId: tpl, accountId: acc, toEmail: toEmail || job.contactEmail, recipientName: toName
       })
-      setMsg('Draft created. Review and edit it in the Outbox before sending.')
+      setMsg({ jobId: job.id, text: 'Draft created. Review and edit it in the Outbox before sending.', ok: true })
       setDraftFor(null)
     } catch (e) {
-      setMsg(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+      const text = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)
+      setMsg({ jobId: job.id, text, ok: false })
     } finally {
       setBusy(false)
     }
@@ -52,7 +53,6 @@ export default function Jobs() {
           <p className="subtitle">Track roles you're applying to, then create a draft email for the contact in one click.</p>
         </div>
       </header>
-      {msg && <p className="notice">{msg}</p>}
 
       <section className="panel">
         <div className="panel-title">{form.id ? 'Edit job' : 'Add a job'}</div>
@@ -78,7 +78,7 @@ export default function Jobs() {
           <div className="card-head">
             <strong>{j.title || 'Untitled job'}{j.company && ` at ${j.company}`}</strong>
             <span className="actions">
-              <button className="link" onClick={() => { setDraftFor(draftFor === j.id ? null : j.id); setToEmail(j.contactEmail); setToName('') }}>
+              <button className="link" onClick={() => { setDraftFor(draftFor === j.id ? null : j.id); setToEmail(j.contactEmail); setToName(''); setMsg(null) }}>
                 Create draft
               </button>
               <button className="link" onClick={() => setForm(j)}>Edit</button>
@@ -86,6 +86,9 @@ export default function Jobs() {
             </span>
           </div>
           <div className="muted">{fmtDate(j.createdAt)}{j.url && ` · ${j.url}`}</div>
+          {msg?.jobId === j.id && (
+            <div className={`status-line ${msg.ok ? 'ok' : 'bad'}`} role="status">{msg.text}</div>
+          )}
           {draftFor === j.id && (
             templates.length === 0 ? (
               <p className="notice">Create a template first, then come back to draft an email for this job.</p>

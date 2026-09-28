@@ -1,6 +1,9 @@
-import { useState } from 'react'
-import type { Account, Contact, OutboxEmail, Template } from '@shared/types'
+import { useEffect, useMemo, useState } from 'react'
+import type { Account, Contact, EmailStatus, OutboxEmail, Template } from '@shared/types'
 import { invoke, useData, fmtDate } from '../lib/api'
+import SearchInput from '../components/SearchInput'
+
+const STATUSES: ('all' | EmailStatus)[] = ['all', 'draft', 'queued', 'sending', 'sent', 'failed']
 
 export default function Outbox() {
   const [emails] = useData<OutboxEmail[]>('emails:list', [], ['emails:changed'])
@@ -14,8 +17,38 @@ export default function Outbox() {
   const [batch, setBatch] = useState<{ templateId: number; accountId: number; contactIds: number[] }>({
     templateId: 0, accountId: 0, contactIds: []
   })
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | EmailStatus>('all')
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: emails.length }
+    for (const e of emails) c[e.status] = (c[e.status] ?? 0) + 1
+    return c
+  }, [emails])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return emails.filter((e) => {
+      if (statusFilter !== 'all' && e.status !== statusFilter) return false
+      if (!q) return true
+      return e.toEmail.toLowerCase().includes(q) || e.subject.toLowerCase().includes(q)
+    })
+  }, [emails, query, statusFilter])
+
+  useEffect(() => {
+    if (!editing) return
+    const onKey = (ev: KeyboardEvent) => ev.key === 'Escape' && setEditing(null)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [editing])
+
+  const canEdit = (e: OutboxEmail) => e.status !== 'sent' && e.status !== 'sending'
+  const visibleEditable = filtered.filter(canEdit).map((e) => e.id)
+  const allVisibleSelected = visibleEditable.length > 0 && visibleEditable.every((id) => selected.includes(id))
 
   const toggle = (id: number) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+  const toggleAllVisible = () =>
+    setSelected((s) => (allVisibleSelected ? s.filter((id) => !visibleEditable.includes(id)) : [...new Set([...s, ...visibleEditable])]))
 
   const createBatch = async () => {
     const templateId = batch.templateId || templates[0]?.id
@@ -37,19 +70,26 @@ export default function Outbox() {
     setEditing(null)
   }
 
-  const canEdit = (e: OutboxEmail) => e.status !== 'sent' && e.status !== 'sending'
-
   return (
     <>
       <header className="page-head">
-        <h1>Outbox</h1>
-        <button className="btn primary" onClick={() => setBatchOpen(!batchOpen)}>New batch from template</button>
+        <div>
+          <h1>Outbox</h1>
+          <p className="subtitle">Review drafts, queue them, and let the machine send them one by one.</p>
+        </div>
+        <div className="row tight">
+          <SearchInput value={query} onChange={setQuery} placeholder="Search to or subject…" />
+          <button className="btn primary" onClick={() => setBatchOpen(!batchOpen)}>
+            {batchOpen ? 'Close' : 'New batch'}
+          </button>
+        </div>
       </header>
 
       {batchOpen && (
         <section className="panel">
+          <div className="panel-title">New batch from template</div>
           {accounts.length === 0 || templates.length === 0 || contacts.length === 0 ? (
-            <p className="empty">
+            <p className="empty compact">
               A batch needs at least one email account (Settings), one template and one contact.
             </p>
           ) : (
@@ -83,36 +123,66 @@ export default function Outbox() {
                 ))}
               </div>
               <button className="btn primary" disabled={batch.contactIds.length === 0} onClick={() => void createBatch()}>
-                Create {batch.contactIds.length} drafts
+                Create {batch.contactIds.length} {batch.contactIds.length === 1 ? 'draft' : 'drafts'}
               </button>
             </>
           )}
         </section>
       )}
 
-      <div className="toolbar">
-        <span className="muted">{selected.length} selected</span>
-        <button className="btn" disabled={!selected.length} onClick={() => void setStatus('queued')}>Add to send queue</button>
-        <button className="btn" disabled={!selected.length} onClick={() => void setStatus('draft')}>Back to drafts</button>
-        <button className="btn danger-btn" disabled={!selected.length}
-          onClick={() => void invoke('emails:delete', selected).then(() => setSelected([]))}>Delete</button>
+      <div className="chip-row" role="tablist" aria-label="Filter by status">
+        {STATUSES.map((s) => (
+          <button
+            key={s}
+            role="tab"
+            aria-selected={statusFilter === s}
+            className={`chip ${statusFilter === s ? 'active' : ''}`}
+            onClick={() => setStatusFilter(s)}
+          >
+            {s === 'all' ? 'All' : s[0].toUpperCase() + s.slice(1)}
+            <span className="chip-count">{counts[s] ?? 0}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className={`toolbar ${selected.length ? 'has-selection' : ''}`}>
+        <span className="muted">{selected.length ? `${selected.length} selected` : 'Select emails to act on them'}</span>
+        <div className="row tight">
+          <button className="btn" disabled={!selected.length} onClick={() => void setStatus('queued')}>Add to send queue</button>
+          <button className="btn" disabled={!selected.length} onClick={() => void setStatus('draft')}>Back to drafts</button>
+          <button className="btn danger-btn" disabled={!selected.length}
+            onClick={() => void invoke('emails:delete', selected).then(() => setSelected([]))}>Delete</button>
+        </div>
       </div>
 
       {emails.length === 0 ? (
-        <p className="empty">Nothing here yet. Create a batch from a template, or draft one from a job.</p>
+        <p className="empty">Nothing here yet. Create a batch from a template, or create a draft from a job.</p>
+      ) : filtered.length === 0 ? (
+        <p className="empty">No emails match the current search and filter.</p>
       ) : (
         <table className="table">
-          <thead><tr><th /><th>To</th><th>Subject</th><th>Status</th><th>Sent</th></tr></thead>
+          <thead>
+            <tr>
+              <th className="col-check">
+                <input type="checkbox" aria-label="Select all visible" checked={allVisibleSelected}
+                  disabled={visibleEditable.length === 0} onChange={toggleAllVisible} />
+              </th>
+              <th>To</th><th>Subject</th><th>Status</th><th>Sent</th>
+            </tr>
+          </thead>
           <tbody>
-            {emails.map((e) => (
-              <tr key={e.id} className="clickable" onClick={() => canEdit(e) && setEditing(e)}>
-                <td onClick={(ev) => ev.stopPropagation()}>
+            {filtered.map((e) => (
+              <tr key={e.id} className={canEdit(e) ? 'clickable' : ''} onClick={() => canEdit(e) && setEditing(e)}>
+                <td className="col-check" onClick={(ev) => ev.stopPropagation()}>
                   <input type="checkbox" checked={selected.includes(e.id)} disabled={!canEdit(e)} onChange={() => toggle(e.id)} />
                 </td>
                 <td>{e.toEmail}</td>
-                <td className="ellipsis">{e.subject}</td>
+                <td className="ellipsis">{e.subject || <span className="muted">(no subject)</span>}</td>
                 <td><span className={`badge st-${e.status}`} title={e.error}>{e.status}</span></td>
-                <td className="muted">{fmtDate(e.sentAt)}{e.status === 'failed' && ` ${e.error}`}</td>
+                <td className="muted">
+                  {fmtDate(e.sentAt)}
+                  {e.status === 'failed' && <span className="error-text" title={e.error}>{e.error}</span>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -121,14 +191,17 @@ export default function Outbox() {
 
       {editing && (
         <div className="drawer-backdrop" onClick={() => setEditing(null)}>
-          <div className="drawer" onClick={(ev) => ev.stopPropagation()}>
-            <h2>Review email</h2>
+          <div className="drawer" role="dialog" aria-label="Review email" onClick={(ev) => ev.stopPropagation()}>
+            <div className="drawer-head">
+              <h2>Review email</h2>
+              <span className={`badge st-${editing.status}`}>{editing.status}</span>
+            </div>
             <label className="field"><span>To</span>
               <input value={editing.toEmail} onChange={(e) => setEditing({ ...editing, toEmail: e.target.value })} /></label>
             <label className="field"><span>Subject</span>
               <input value={editing.subject} onChange={(e) => setEditing({ ...editing, subject: e.target.value })} /></label>
             <label className="field"><span>Body</span>
-              <textarea rows={14} value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} /></label>
+              <textarea rows={16} value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} /></label>
             <div className="row">
               <button className="btn primary" onClick={() => void saveEdit()}>Save changes</button>
               <button className="btn" onClick={() => setEditing(null)}>Close</button>

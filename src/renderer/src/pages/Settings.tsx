@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Copy, Check } from 'lucide-react'
 import type { Account, AccountInput, Settings as SettingsT, SettingsInput } from '@shared/types'
 import { invoke, useData } from '../lib/api'
 
@@ -12,12 +13,18 @@ const blankAccount: AccountInput = {
   label: '', email: '', username: '', password: '', dailyCap: 40, ...PRESETS.Gmail
 }
 
+function presetFor(f: AccountInput): string {
+  return Object.keys(PRESETS).find((k) => k !== 'Custom' && PRESETS[k].host === f.host) ?? 'Custom'
+}
+
 export default function Settings() {
   const [accounts, reloadAccounts] = useData<Account[]>('accounts:list', [])
   const [settings, reloadSettings] = useData<SettingsT | null>('settings:get', null)
   const [form, setForm] = useState<AccountInput>(blankAccount)
-  const [status, setStatus] = useState<Record<number, string>>({})
+  const [status, setStatus] = useState<Record<number, { ok: boolean | null; message: string }>>({})
   const [draft, setDraft] = useState<SettingsInput>({})
+  const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const saveAccount = async () => {
     if (!form.email) return
@@ -27,49 +34,77 @@ export default function Settings() {
   }
 
   const test = async (id: number) => {
-    setStatus((s) => ({ ...s, [id]: 'Testing…' }))
+    setStatus((s) => ({ ...s, [id]: { ok: null, message: 'Testing connection…' } }))
     const r = await invoke<{ ok: boolean; message: string }>('accounts:test', id)
-    setStatus((s) => ({ ...s, [id]: r.message }))
+    setStatus((s) => ({ ...s, [id]: r }))
   }
 
   const saveSettings = async () => {
     await invoke('settings:set', draft)
     setDraft({})
     reloadSettings()
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const copyToken = async (token: string) => {
+    await navigator.clipboard.writeText(token)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   if (!settings) return null
   const v = { ...settings, ...draft }
+  const dirty = Object.keys(draft).length > 0
+  const activePreset = presetFor(form)
 
   return (
     <>
-      <header className="page-head"><h1>Settings</h1></header>
+      <header className="page-head">
+        <div>
+          <h1>Settings</h1>
+          <p className="subtitle">Sending accounts, pacing, and attachments.</p>
+        </div>
+      </header>
 
-      <h2>Email accounts</h2>
+      <div className="section-head">
+        <h2>Email accounts</h2>
+      </div>
       <p className="hint">
         For Gmail, turn on 2-step verification and create an app password. Use that instead of your normal password.
         Passwords are stored encrypted with your operating system keychain.
       </p>
+      {accounts.length === 0 && <p className="empty compact">No accounts yet. Add one below to start sending.</p>}
       {accounts.map((a) => (
-        <div className="card" key={a.id}>
+        <div className={`card ${form.id === a.id ? 'selected' : ''}`} key={a.id}>
           <div className="card-head">
-            <strong>{a.label || a.email}</strong>
+            <div>
+              <strong>{a.label || a.email}</strong>
+              <div className="muted small">{a.email} · {a.host}:{a.port} · max {a.dailyCap}/day</div>
+            </div>
             <span className="actions">
               <button className="link" onClick={() => void test(a.id)}>Test connection</button>
               <button className="link" onClick={() => setForm({ ...a, password: '' })}>Edit</button>
               <button className="link danger" onClick={() => void invoke('accounts:delete', a.id).then(reloadAccounts)}>Delete</button>
             </span>
           </div>
-          <div className="muted">{a.email} · {a.host}:{a.port} · max {a.dailyCap}/day</div>
-          {status[a.id] && <div className="notice">{status[a.id]}</div>}
+          {status[a.id] && (
+            <div className={`status-line ${status[a.id].ok === true ? 'ok' : status[a.id].ok === false ? 'bad' : ''}`}>
+              {status[a.id].message}
+            </div>
+          )}
         </div>
       ))}
 
       <section className="panel">
+        <div className="panel-title">{form.id ? 'Edit account' : 'Add an account'}</div>
         {!form.id && (
-          <div className="row">
+          <div className="segmented" role="radiogroup" aria-label="Provider">
             {Object.keys(PRESETS).map((p) => (
-              <button key={p} className="btn" onClick={() => setForm({ ...form, ...PRESETS[p] })}>{p}</button>
+              <button key={p} role="radio" aria-checked={activePreset === p}
+                className={activePreset === p ? 'active' : ''} onClick={() => setForm({ ...form, ...PRESETS[p] })}>
+                {p}
+              </button>
             ))}
           </div>
         )}
@@ -92,18 +127,22 @@ export default function Settings() {
           Use SSL (port 465). Leave off for STARTTLS on port 587.
         </label>
         <div className="row">
-          <button className="btn primary" onClick={() => void saveAccount()}>{form.id ? 'Save account' : 'Add account'}</button>
+          <button className="btn primary" disabled={!form.email} onClick={() => void saveAccount()}>
+            {form.id ? 'Save account' : 'Add account'}
+          </button>
           {form.id && <button className="btn" onClick={() => setForm(blankAccount)}>Cancel</button>}
         </div>
       </section>
 
-      <h2>Sending</h2>
+      <div className="section-head">
+        <h2>Sending</h2>
+      </div>
       <section className="panel">
         <div className="grid3">
           <label className="field"><span>Minimum delay between emails (seconds)</span>
-            <input type="number" value={v.minDelaySec} onChange={(e) => setDraft({ ...draft, minDelaySec: Number(e.target.value) })} /></label>
+            <input type="number" min={0} value={v.minDelaySec} onChange={(e) => setDraft({ ...draft, minDelaySec: Number(e.target.value) })} /></label>
           <label className="field"><span>Maximum delay (seconds)</span>
-            <input type="number" value={v.maxDelaySec} onChange={(e) => setDraft({ ...draft, maxDelaySec: Number(e.target.value) })} /></label>
+            <input type="number" min={0} value={v.maxDelaySec} onChange={(e) => setDraft({ ...draft, maxDelaySec: Number(e.target.value) })} /></label>
           <label className="field"><span>CV attachment</span>
             <div className="row tight">
               <input readOnly value={v.cvPath} placeholder="No file attached" />
@@ -111,17 +150,24 @@ export default function Settings() {
               {v.cvPath && <button className="btn" onClick={() => setDraft({ ...draft, cvPath: '' })}>Remove</button>}
             </div></label>
         </div>
+        <div className="row">
+          <button className="btn primary" disabled={!dirty} onClick={() => void saveSettings()}>Save settings</button>
+          {saved && <span className="saved-note"><Check size={14} /> Saved</span>}
+        </div>
       </section>
 
-      <div className="row">
-        <button className="btn primary" onClick={() => void saveSettings()}>Save settings</button>
+      <div className="section-head">
+        <h2>Browser extension</h2>
       </div>
-
-      <h2>Browser extension</h2>
       <p className="hint">
         The extension will send jobs to http://127.0.0.1:{settings.serverPort}/jobs with this token:
       </p>
-      <code className="token">{settings.apiToken}</code>
+      <div className="token-row">
+        <code className="token">{settings.apiToken}</code>
+        <button className="btn" onClick={() => void copyToken(settings.apiToken)}>
+          {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
+        </button>
+      </div>
     </>
   )
 }

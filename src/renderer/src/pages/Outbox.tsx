@@ -172,7 +172,7 @@ export default function Outbox() {
           </thead>
           <tbody>
             {filtered.map((e) => (
-              <tr key={e.id} className={canEdit(e) ? 'clickable' : ''} onClick={() => canEdit(e) && setEditing(e)}>
+              <tr key={e.id} className={`${canEdit(e) ? 'clickable' : ''} ${selected.includes(e.id) ? 'selected' : ''}`} onClick={() => canEdit(e) && setEditing(e)}>
                 <td className="col-check" onClick={(ev) => ev.stopPropagation()}>
                   <input type="checkbox" checked={selected.includes(e.id)} disabled={!canEdit(e)} onChange={() => toggle(e.id)} />
                 </td>

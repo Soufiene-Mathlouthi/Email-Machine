@@ -46,11 +46,16 @@ export default function Jobs() {
 
   return (
     <>
-      <header className="page-head"><h1>Jobs</h1></header>
-      <p className="hint">Track roles you're applying to, then create a draft email for the contact in one click.</p>
+      <header className="page-head">
+        <div>
+          <h1>Jobs</h1>
+          <p className="subtitle">Track roles you're applying to, then create a draft email for the contact in one click.</p>
+        </div>
+      </header>
       {msg && <p className="notice">{msg}</p>}
 
       <section className="panel">
+        <div className="panel-title">{form.id ? 'Edit job' : 'Add a job'}</div>
         <div className="grid3">
           <label className="field"><span>Job title</span>
             <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>

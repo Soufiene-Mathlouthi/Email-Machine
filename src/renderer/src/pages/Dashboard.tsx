@@ -85,7 +85,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: NavTarget)
       <div className="stat-grid">
         <StatTile label="Sent today" value={stats.sentToday} tone="ok"
           hint={dailyCapacity ? `of ${dailyCapacity} daily capacity` : 'no accounts yet'} />
-        <StatTile label="In queue" value={stats.queued} hint={`${stats.drafts} drafts awaiting review`} />
+        <StatTile label="In queue" value={stats.queued} hint={`${stats.drafts} ${stats.drafts === 1 ? 'draft' : 'drafts'} awaiting review`} />
         <StatTile label="Failed" value={stats.failed} tone={stats.failed > 0 ? 'bad' : 'default'}
           hint={stats.failed > 0 ? 'check Outbox for errors' : 'all clear'} />
         <StatTile label="Success rate" value={stats.successRate === null ? '—' : `${stats.successRate}%`}

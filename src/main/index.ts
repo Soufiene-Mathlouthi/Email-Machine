@@ -11,7 +11,7 @@ function createWindow(): void {
     minWidth: 980,
     minHeight: 620,
     title: 'Email Machine',
-    backgroundColor: '#0f1a2e',
+    backgroundColor: '#f9fafb',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

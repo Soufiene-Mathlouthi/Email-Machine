@@ -2,35 +2,12 @@ import { BrowserWindow } from 'electron'
 import type { QueueState } from '@shared/types'
 import { getDb, getSetting } from './db'
 import { sendEmail } from './mailer'
+import { selectNextEligible } from './queue-select'
 
 let running = false
 let timer: NodeJS.Timeout | null = null
 let nextSendAt: number | null = null
 let current: string | null = null
-
-interface QueuedRow {
-  id: number
-  account_id: number
-  to_email: string
-  subject: string
-  body: string
-}
-
-// Next queued email whose account has not reached its daily cap yet
-function nextEligible(): QueuedRow | undefined {
-  return getDb()
-    .prepare(
-      `SELECT e.id, e.account_id, e.to_email, e.subject, e.body
-       FROM emails e JOIN accounts a ON a.id = e.account_id
-       WHERE e.status = 'queued'
-         AND (SELECT COUNT(*) FROM emails s
-              WHERE s.account_id = e.account_id AND s.status = 'sent'
-                AND date(s.sent_at / 1000, 'unixepoch', 'localtime') = date('now', 'localtime')
-             ) < a.daily_cap
-       ORDER BY e.id LIMIT 1`
-    )
-    .get() as QueuedRow | undefined
-}
 
 export function queueState(): QueueState {
   const { n } = getDb().prepare("SELECT COUNT(*) AS n FROM emails WHERE status = 'queued'").get() as { n: number }
@@ -53,7 +30,7 @@ function randomDelayMs(): number {
 
 async function tick(): Promise<void> {
   if (!running) return
-  const email = nextEligible()
+  const email = selectNextEligible(getDb())
   if (!email) {
     stopQueue()
     return
@@ -67,8 +44,18 @@ async function tick(): Promise<void> {
   broadcast('emails:changed')
 
   try {
-    await sendEmail(email.account_id, { to: email.to_email, subject: email.subject, body: email.body })
-    db.prepare("UPDATE emails SET status = 'sent', sent_at = ?, error = '' WHERE id = ?").run(Date.now(), email.id)
+    const parent = email.parent_id
+      ? (db.prepare('SELECT message_id, thread_id FROM emails WHERE id = ?').get(email.parent_id) as
+          | { message_id: string; thread_id: string }
+          | undefined)
+      : undefined
+    const thread = parent
+      ? { inReplyTo: parent.message_id, references: parent.message_id, gmailThreadId: parent.thread_id }
+      : undefined
+    const sent = await sendEmail(email.account_id, { to: email.to_email, subject: email.subject, body: email.body }, thread)
+    db.prepare("UPDATE emails SET status = 'sent', sent_at = ?, error = '', message_id = ?, thread_id = ? WHERE id = ?").run(
+      Date.now(), sent.messageId, sent.threadId, email.id
+    )
   } catch (err) {
     db.prepare("UPDATE emails SET status = 'failed', error = ? WHERE id = ?").run(
       err instanceof Error ? err.message : String(err),
@@ -79,7 +66,7 @@ async function tick(): Promise<void> {
   current = null
   broadcast('emails:changed')
   if (!running) return
-  if (!nextEligible()) {
+  if (!selectNextEligible(db)) {
     stopQueue()
     return
   }

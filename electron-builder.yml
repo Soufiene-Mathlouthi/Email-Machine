@@ -1,0 +1,15 @@
+appId: com.emailmachine.app
+productName: Email Machine
+directories:
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - node_modules/better-sqlite3/**
+win:
+  target: nsis
+mac:
+  target: dmg
+linux:
+  target: AppImage

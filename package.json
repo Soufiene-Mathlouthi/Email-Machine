@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "lucide-react": "^1.48.0",
     "nodemailer": "^10.0.12",
     "papaparse": "^5.7.0",
     "react": "^19.3.0",

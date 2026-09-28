@@ -6,9 +6,10 @@ import type {
   Settings, SettingsInput, Template, TemplateInput
 } from '@shared/types'
 import { SERVER_PORT } from '@shared/types'
+import { renderTemplate } from '@shared/template'
 import { draftEmail } from './ai'
 import { decryptSecret, encryptSecret, getApiToken, getDb, getSetting, setSetting } from './db'
-import { renderTemplate, verifyAccount } from './mailer'
+import { verifyAccount } from './mailer'
 import { broadcast, queueState, startQueue, stopQueue } from './queue'
 
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>): void {

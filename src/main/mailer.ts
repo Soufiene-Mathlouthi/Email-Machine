@@ -3,10 +3,6 @@ import { existsSync } from 'fs'
 import { basename } from 'path'
 import { decryptSecret, getDb, getSetting } from './db'
 
-export function renderTemplate(tpl: string, vars: Record<string, string>): string {
-  return tpl.replace(/{{\s*(\w+)\s*}}/g, (_m, key: string) => vars[key] ?? '')
-}
-
 interface AccountRow {
   email: string
   label: string

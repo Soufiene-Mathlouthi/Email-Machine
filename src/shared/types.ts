@@ -8,6 +8,8 @@ export interface Account {
   username: string
   hasPassword: boolean
   dailyCap: number
+  authType: 'smtp' | 'gmail'
+  authError: string
 }
 
 export interface AccountInput {
@@ -68,6 +70,11 @@ export interface OutboxEmail {
   error: string
   sentAt: number | null
   createdAt: number
+  parentId: number | null
+  step: number
+  repliedAt: number | null
+  followupsStopped: boolean
+  stopReason: '' | 'replied' | 'manual' | 'bounced'
 }
 
 export interface Settings {
@@ -76,12 +83,18 @@ export interface Settings {
   cvPath: string
   apiToken: string
   serverPort: number
+  googleClientId: string
+  googleClientSecretSet: boolean
+  followUps: FollowUpConfig
 }
 
 export interface SettingsInput {
   minDelaySec?: number
   maxDelaySec?: number
   cvPath?: string
+  googleClientId?: string
+  googleClientSecret?: string
+  followUps?: FollowUpConfig
 }
 
 export interface QueueState {

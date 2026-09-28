@@ -2,12 +2,16 @@ import { dialog, ipcMain } from 'electron'
 import { readFileSync } from 'fs'
 import Papa from 'papaparse'
 import type {
-  Account, AccountInput, Contact, ContactInput, Job, JobInput, OutboxEmail,
+  Account, AccountInput, Contact, ContactInput, FollowUpRunSummary, Job, JobInput, OutboxEmail,
   Settings, SettingsInput, Template, TemplateInput
 } from '@shared/types'
 import { SERVER_PORT } from '@shared/types'
 import { renderTemplate } from '@shared/template'
 import { decryptSecret, encryptSecret, getApiToken, getDb, getSetting, setSetting } from './db'
+import { stopSequences } from './followups/engine'
+import { applyFollowUpUpdate, parseFollowUpConfig } from './followups/rules'
+import { runFollowUps } from './followups/scheduler'
+import { cancelGmailConnect, connectGmail, forgetAccountToken } from './google/oauth'
 import { verifyAccount } from './mailer'
 import { broadcast, queueState, startQueue, stopQueue } from './queue'
 
@@ -16,7 +20,8 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R |
 }
 
 const EMAIL_COLS = `id, account_id AS accountId, contact_id AS contactId, job_id AS jobId,
-  to_email AS toEmail, subject, body, status, error, sent_at AS sentAt, created_at AS createdAt`
+  to_email AS toEmail, subject, body, status, error, sent_at AS sentAt, created_at AS createdAt,
+  parent_id AS parentId, step, replied_at AS repliedAt, followups_stopped AS followupsStopped, stop_reason AS stopReason`
 
 export function registerIpc(): void {
   const db = getDb()
@@ -32,12 +37,19 @@ export function registerIpc(): void {
       secure: !!r.secure,
       username: r.username as string,
       hasPassword: !!r.password_enc,
-      dailyCap: r.daily_cap as number
+      dailyCap: r.daily_cap as number,
+      authType: r.auth_type as 'smtp' | 'gmail',
+      authError: r.auth_error as string
     }))
   )
 
   handle('accounts:save', (a: AccountInput) => {
     if (a.id) {
+      const kind = db.prepare('SELECT auth_type FROM accounts WHERE id=?').get(a.id) as { auth_type: string } | undefined
+      if (kind?.auth_type === 'gmail') {
+        db.prepare('UPDATE accounts SET label=?, daily_cap=? WHERE id=?').run(a.label, a.dailyCap, a.id)
+        return
+      }
       db.prepare(
         'UPDATE accounts SET label=?, email=?, host=?, port=?, secure=?, username=?, daily_cap=? WHERE id=?'
       ).run(a.label, a.email, a.host, a.port, a.secure ? 1 : 0, a.username, a.dailyCap, a.id)
@@ -51,7 +63,11 @@ export function registerIpc(): void {
     }
   })
 
-  handle('accounts:delete', (id: number) => void db.prepare('DELETE FROM accounts WHERE id=?').run(id))
+  handle('accounts:delete', (id: number) => {
+    db.prepare('DELETE FROM accounts WHERE id=?').run(id)
+    forgetAccountToken(id)
+    broadcast('emails:changed')
+  })
 
   handle('accounts:test', async (id: number) => {
     try {
@@ -61,6 +77,11 @@ export function registerIpc(): void {
       return { ok: false, message: e instanceof Error ? e.message : String(e) }
     }
   })
+
+  handle('gmail:connect', async () => {
+    await connectGmail()
+  })
+  handle('gmail:cancel', () => cancelGmailConnect())
 
   // ---------- contacts ----------
   handle('contacts:list', (): Contact[] =>
@@ -134,7 +155,9 @@ export function registerIpc(): void {
 
   // ---------- emails (outbox) ----------
   handle('emails:list', (): OutboxEmail[] =>
-    db.prepare(`SELECT ${EMAIL_COLS} FROM emails ORDER BY id DESC`).all() as OutboxEmail[]
+    (db.prepare(`SELECT ${EMAIL_COLS} FROM emails ORDER BY id DESC`).all() as (Omit<OutboxEmail, 'followupsStopped'> & {
+      followupsStopped: number
+    })[]).map((e) => ({ ...e, followupsStopped: !!e.followupsStopped }))
   )
 
   // Create one personalized draft per contact from a template
@@ -199,6 +222,18 @@ export function registerIpc(): void {
     broadcast('emails:changed')
   })
 
+  handle('emails:markReplied', (ids: number[]) => {
+    stopSequences(db, ids, 'replied', Date.now())
+    broadcast('emails:changed')
+    broadcast('queue:state', queueState())
+  })
+  handle('emails:stopFollowups', (ids: number[]) => {
+    stopSequences(db, ids, 'manual', Date.now())
+    broadcast('emails:changed')
+    broadcast('queue:state', queueState())
+  })
+  handle('followups:run', (): Promise<FollowUpRunSummary> => runFollowUps())
+
   // ---------- queue ----------
   handle('queue:state', () => queueState())
   handle('queue:start', () => startQueue())
@@ -210,13 +245,22 @@ export function registerIpc(): void {
     maxDelaySec: Number(getSetting('maxDelaySec', '120')),
     cvPath: getSetting('cvPath'),
     apiToken: getApiToken(),
-    serverPort: SERVER_PORT
+    serverPort: SERVER_PORT,
+    googleClientId: getSetting('googleClientId'),
+    googleClientSecretSet: !!decryptSecret(getSetting('googleClientSecretEnc')),
+    followUps: parseFollowUpConfig(getSetting('followUps'))
   }))
 
   handle('settings:set', (s: SettingsInput) => {
     if (s.minDelaySec !== undefined) setSetting('minDelaySec', String(s.minDelaySec))
     if (s.maxDelaySec !== undefined) setSetting('maxDelaySec', String(s.maxDelaySec))
     if (s.cvPath !== undefined) setSetting('cvPath', s.cvPath)
+    if (s.googleClientId !== undefined) setSetting('googleClientId', s.googleClientId.trim())
+    if (s.googleClientSecret) setSetting('googleClientSecretEnc', encryptSecret(s.googleClientSecret.trim()))
+    if (s.followUps !== undefined) {
+      const next = applyFollowUpUpdate(parseFollowUpConfig(getSetting('followUps')), s.followUps, Date.now())
+      setSetting('followUps', JSON.stringify(next))
+    }
   })
 
   handle('dialog:pickCv', async () => {

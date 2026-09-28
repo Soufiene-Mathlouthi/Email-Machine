@@ -91,4 +91,22 @@ export interface QueueState {
   queued: number
 }
 
+export interface FollowUpStepConfig {
+  templateId: number | null
+  delayDays: number
+}
+
+export interface FollowUpConfig {
+  enabled: boolean
+  enabledAt: number | null
+  steps: [FollowUpStepConfig, FollowUpStepConfig]
+}
+
+export interface FollowUpRunSummary {
+  repliesFound: number
+  bounces: number
+  draftsCreated: number
+  cleanedUp: number
+}
+
 export const SERVER_PORT = 47821

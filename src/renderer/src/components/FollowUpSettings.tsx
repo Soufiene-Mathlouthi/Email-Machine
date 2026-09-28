@@ -28,7 +28,9 @@ export default function FollowUpSettings({ config, onSaved }: { config: FollowUp
     setRunning(true)
     try {
       const s = await invoke<FollowUpRunSummary>('followups:run')
-      setResult(`${s.repliesFound} replies found · ${s.bounces} bounces · ${s.draftsCreated} follow-up drafts created`)
+      const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
+      setResult(`${n(s.repliesFound, 'reply', 'replies')} found · ${n(s.bounces, 'bounce', 'bounces')} · ` +
+        `${n(s.draftsCreated, 'follow-up draft', 'follow-up drafts')} created`)
     } catch (e) {
       setResult(errorText(e))
     } finally {

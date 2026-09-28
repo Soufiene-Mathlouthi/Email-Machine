@@ -358,6 +358,8 @@ input[type="checkbox"]:focus { box-shadow: none; }
 .guide summary { font-weight: 600; cursor: pointer; }
 .guide ol { margin: var(--s3) 0 0; padding-left: var(--s5); display: grid; gap: var(--s2); color: var(--text-2); }
 .status-line .link { margin-left: var(--s2); }
+.subject-cell .tag { margin: 0 var(--s2) 0 0; }
+.subject-cell { max-width: 380px; }
 
 /* ---------- responsive + motion ---------- */
 @media (max-width: 1100px) {

@@ -3,7 +3,8 @@ import type { Account, Contact, EmailStatus, OutboxEmail, Template } from '@shar
 import { invoke, useData, fmtDate } from '../lib/api'
 import SearchInput from '../components/SearchInput'
 
-const STATUSES: ('all' | EmailStatus)[] = ['all', 'draft', 'queued', 'sending', 'sent', 'failed']
+type Filter = 'all' | EmailStatus | 'replied'
+const STATUSES: Filter[] = ['all', 'draft', 'queued', 'sending', 'sent', 'failed', 'replied']
 
 export default function Outbox() {
   const [emails] = useData<OutboxEmail[]>('emails:list', [], ['emails:changed'])
@@ -18,18 +19,21 @@ export default function Outbox() {
     templateId: 0, accountId: 0, contactIds: []
   })
   const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | EmailStatus>('all')
+  const [statusFilter, setStatusFilter] = useState<Filter>('all')
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: emails.length }
-    for (const e of emails) c[e.status] = (c[e.status] ?? 0) + 1
+    const c: Record<string, number> = { all: emails.length, replied: 0 }
+    for (const e of emails) {
+      c[e.status] = (c[e.status] ?? 0) + 1
+      if (e.repliedAt !== null) c.replied++
+    }
     return c
   }, [emails])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return emails.filter((e) => {
-      if (statusFilter !== 'all' && e.status !== statusFilter) return false
+      if (statusFilter === 'replied' ? e.repliedAt === null : statusFilter !== 'all' && e.status !== statusFilter) return false
       if (!q) return true
       return e.toEmail.toLowerCase().includes(q) || e.subject.toLowerCase().includes(q)
     })
@@ -43,11 +47,16 @@ export default function Outbox() {
   }, [editing])
 
   const canEdit = (e: OutboxEmail) => e.status !== 'sent' && e.status !== 'sending'
-  const visibleEditable = filtered.filter(canEdit).map((e) => e.id)
+  const selectable = (e: OutboxEmail) => e.status !== 'sending'
+  const visibleEditable = filtered.filter(selectable).map((e) => e.id)
+  const byId = useMemo(() => new Map(emails.map((e) => [e.id, e])), [emails])
+  const selectedRows = selected.map((id) => byId.get(id)).filter((e): e is OutboxEmail => !!e)
+  const hasSent = selectedRows.some((e) => e.status === 'sent')
+  const canStop = selectedRows.length > 0 && selectedRows.every((e) => e.status === 'sent' || e.parentId !== null)
 
   // Bulk actions must only ever touch rows the user can currently see.
   useEffect(() => {
-    const allowed = new Set(filtered.filter(canEdit).map((e) => e.id))
+    const allowed = new Set(filtered.filter(selectable).map((e) => e.id))
     setSelected((s) => (s.every((id) => allowed.has(id)) ? s : s.filter((id) => allowed.has(id))))
   }, [filtered])
   const allVisibleSelected = visibleEditable.length > 0 && visibleEditable.every((id) => selected.includes(id))
@@ -165,9 +174,13 @@ export default function Outbox() {
       <div className={`toolbar ${selected.length ? 'has-selection' : ''}`}>
         <span className="muted">{selected.length ? `${selected.length} selected` : 'Select emails to act on them'}</span>
         <div className="row tight">
-          <button className="btn" disabled={!selected.length} onClick={() => void setStatus('queued')}>Add to send queue</button>
-          <button className="btn" disabled={!selected.length} onClick={() => void setStatus('draft')}>Back to drafts</button>
-          <button className="btn danger-btn" disabled={!selected.length}
+          <button className="btn" disabled={!selected.length || hasSent} onClick={() => void setStatus('queued')}>Add to send queue</button>
+          <button className="btn" disabled={!selected.length || hasSent} onClick={() => void setStatus('draft')}>Back to drafts</button>
+          <button className="btn" disabled={!canStop} title="They replied: stop following up"
+            onClick={() => void invoke('emails:markReplied', selected).then(() => setSelected([]))}>Mark replied</button>
+          <button className="btn" disabled={!canStop}
+            onClick={() => void invoke('emails:stopFollowups', selected).then(() => setSelected([]))}>Stop follow-ups</button>
+          <button className="btn danger-btn" disabled={!selected.length || hasSent}
             onClick={() => void invoke('emails:delete', selected).then(() => setSelected([]))}>Delete</button>
         </div>
       </div>
@@ -191,10 +204,16 @@ export default function Outbox() {
             {filtered.map((e) => (
               <tr key={e.id} className={`${canEdit(e) ? 'clickable' : ''} ${selected.includes(e.id) ? 'selected' : ''}`} onClick={() => canEdit(e) && openEditor(e)}>
                 <td className="col-check" onClick={(ev) => ev.stopPropagation()}>
-                  <input type="checkbox" checked={selected.includes(e.id)} disabled={!canEdit(e)} onChange={() => toggle(e.id)} />
+                  <input type="checkbox" checked={selected.includes(e.id)} disabled={!selectable(e)} onChange={() => toggle(e.id)} />
                 </td>
                 <td>{e.toEmail}</td>
-                <td className="ellipsis">{e.subject || <span className="muted">(no subject)</span>}</td>
+                <td className="ellipsis subject-cell">
+                  {e.step > 0 && <span className="tag accent">Follow-up {e.step}</span>}
+                  {e.repliedAt !== null && <span className="tag ok">Replied</span>}
+                  {e.stopReason === 'bounced' && <span className="tag bad">Bounced</span>}
+                  {e.stopReason === 'manual' && <span className="tag">Follow-ups off</span>}
+                  {e.subject || <span className="muted">(no subject)</span>}
+                </td>
                 <td><span className={`badge st-${e.status}`} title={e.error}>{e.status}</span></td>
                 <td className="muted">
                   {fmtDate(e.sentAt)}

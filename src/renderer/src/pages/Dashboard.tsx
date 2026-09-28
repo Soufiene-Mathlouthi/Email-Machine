@@ -44,7 +44,14 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: NavTarget)
     }
     const attempted = sentTotal + failed
     const successRate = attempted ? Math.round((sentTotal / attempted) * 100) : null
-    return { sentToday, sentTotal, queued, failed, drafts, successRate }
+    let originalsSent = 0, replied = 0, followUpDrafts = 0
+    for (const e of emails) {
+      if (e.step === 0 && e.status === 'sent') originalsSent++
+      if (e.step === 0 && e.repliedAt !== null) replied++
+      if (e.step > 0 && e.status === 'draft') followUpDrafts++
+    }
+    const replyRate = originalsSent ? Math.round((replied / originalsSent) * 100) : null
+    return { sentToday, sentTotal, queued, failed, drafts, successRate, replied, followUpDrafts, replyRate }
   }, [emails, day])
 
   const dailyCapacity = accounts.reduce((sum, a) => sum + a.dailyCap, 0)
@@ -97,11 +104,13 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: NavTarget)
       <div className="stat-grid">
         <StatTile label="Sent today" value={stats.sentToday} tone="ok"
           hint={dailyCapacity ? `of ${dailyCapacity} daily capacity` : 'no accounts yet'} />
-        <StatTile label="In queue" value={stats.queued} hint={`${stats.drafts} ${stats.drafts === 1 ? 'draft' : 'drafts'} awaiting review`} />
+        <StatTile label="In queue" value={stats.queued}
+          hint={`${stats.drafts} ${stats.drafts === 1 ? 'draft' : 'drafts'} awaiting review` +
+            (stats.followUpDrafts ? ` · ${stats.followUpDrafts} follow-up${stats.followUpDrafts === 1 ? '' : 's'} to review` : '')} />
         <StatTile label="Failed" value={stats.failed} tone={stats.failed > 0 ? 'bad' : 'default'}
-          hint={stats.failed > 0 ? 'check Outbox for errors' : 'all clear'} />
-        <StatTile label="Success rate" value={stats.successRate === null ? '—' : `${stats.successRate}%`}
-          hint={`${stats.sentTotal} sent all time`} />
+          hint={stats.failed > 0 ? 'check Outbox for errors' : stats.successRate === null ? 'all clear' : `${stats.successRate}% delivered`} />
+        <StatTile label="Reply rate" value={stats.replyRate === null ? '—' : `${stats.replyRate}%`}
+          hint={`${stats.replied} ${stats.replied === 1 ? 'reply' : 'replies'} · ${stats.sentTotal} sent`} />
       </div>
 
       <div className="mini-stats">

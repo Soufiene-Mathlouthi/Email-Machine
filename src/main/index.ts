@@ -3,6 +3,7 @@ import { join } from 'path'
 import { getDb } from './db'
 import { registerIpc } from './ipc'
 import { startLocalServer } from './server'
+import { startFollowUpScheduler } from './followups/scheduler'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -36,6 +37,7 @@ app.whenReady().then(() => {
   getDb()
   registerIpc()
   startLocalServer()
+  startFollowUpScheduler()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

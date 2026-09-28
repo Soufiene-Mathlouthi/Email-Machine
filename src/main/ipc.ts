@@ -158,6 +158,25 @@ export function registerIpc(): void {
     broadcast('emails:changed')
   })
 
+  handle('emails:createForJob', (p: { jobId: number; templateId: number; accountId: number; toEmail: string; recipientName: string }) => {
+    const job = db.prepare('SELECT title, company, contact_email AS contactEmail FROM jobs WHERE id=?').get(p.jobId) as
+      | { title: string; company: string; contactEmail: string }
+      | undefined
+    if (!job) throw new Error('Job not found')
+    const tpl = db.prepare('SELECT subject, body FROM templates WHERE id=?').get(p.templateId) as
+      | { subject: string; body: string }
+      | undefined
+    if (!tpl) throw new Error('Template not found')
+    const to = (p.toEmail || job.contactEmail).trim()
+    if (!to) throw new Error('Enter a recipient email for this job.')
+    const name = p.recipientName.trim()
+    const vars = { name, firstName: name.split(' ')[0] ?? '', company: job.company, role: job.title, email: to }
+    db.prepare(
+      "INSERT INTO emails (account_id, job_id, to_email, subject, body, status, created_at) VALUES (?,?,?,?,?,'draft',?)"
+    ).run(p.accountId, p.jobId, to, renderTemplate(tpl.subject, vars), renderTemplate(tpl.body, vars), Date.now())
+    broadcast('emails:changed')
+  })
+
   handle('emails:update', (e: { id: number; toEmail: string; subject: string; body: string }) => {
     db.prepare("UPDATE emails SET to_email=?, subject=?, body=? WHERE id=? AND status IN ('draft','failed','queued')").run(
       e.toEmail, e.subject, e.body, e.id

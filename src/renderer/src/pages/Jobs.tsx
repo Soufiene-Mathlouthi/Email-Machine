@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Account, Job, JobInput } from '@shared/types'
+import type { Account, Job, JobInput, Template } from '@shared/types'
 import { invoke, useData, fmtDate } from '../lib/api'
 
 const empty: JobInput = { title: '', company: '', url: '', description: '', contactEmail: '' }
@@ -7,11 +7,13 @@ const empty: JobInput = { title: '', company: '', url: '', description: '', cont
 export default function Jobs() {
   const [jobs, reload] = useData<Job[]>('jobs:list', [], ['jobs:changed'])
   const [accounts] = useData<Account[]>('accounts:list', [])
+  const [templates] = useData<Template[]>('templates:list', [])
   const [form, setForm] = useState<JobInput>(empty)
   const [draftFor, setDraftFor] = useState<number | null>(null)
   const [toEmail, setToEmail] = useState('')
   const [toName, setToName] = useState('')
   const [accountId, setAccountId] = useState(0)
+  const [templateId, setTemplateId] = useState(0)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
@@ -22,13 +24,17 @@ export default function Jobs() {
     reload()
   }
 
-  const draft = async (job: Job) => {
+  const createDraft = async (job: Job) => {
     const acc = accountId || accounts[0]?.id
+    const tpl = templateId || templates[0]?.id
     if (!acc) return setMsg('Add an email account in Settings first.')
+    if (!tpl) return setMsg('Add a template first.')
     setBusy(true)
     setMsg('')
     try {
-      await invoke('emails:draftForJob', { jobId: job.id, accountId: acc, toEmail: toEmail || job.contactEmail, recipientName: toName })
+      await invoke('emails:createForJob', {
+        jobId: job.id, templateId: tpl, accountId: acc, toEmail: toEmail || job.contactEmail, recipientName: toName
+      })
       setMsg('Draft created. Review and edit it in the Outbox before sending.')
       setDraftFor(null)
     } catch (e) {
@@ -41,7 +47,7 @@ export default function Jobs() {
   return (
     <>
       <header className="page-head"><h1>Jobs</h1></header>
-      <p className="hint">Paste a job here now. Later the browser extension will drop jobs into this list automatically.</p>
+      <p className="hint">Track roles you're applying to, then create a draft email for the contact in one click.</p>
       {msg && <p className="notice">{msg}</p>}
 
       <section className="panel">
@@ -68,7 +74,7 @@ export default function Jobs() {
             <strong>{j.title || 'Untitled job'}{j.company && ` at ${j.company}`}</strong>
             <span className="actions">
               <button className="link" onClick={() => { setDraftFor(draftFor === j.id ? null : j.id); setToEmail(j.contactEmail); setToName('') }}>
-                Draft email with AI
+                Create draft
               </button>
               <button className="link" onClick={() => setForm(j)}>Edit</button>
               <button className="link danger" onClick={() => void invoke('jobs:delete', j.id).then(reload)}>Delete</button>
@@ -76,19 +82,27 @@ export default function Jobs() {
           </div>
           <div className="muted">{fmtDate(j.createdAt)}{j.url && ` · ${j.url}`}</div>
           {draftFor === j.id && (
-            <div className="inline-form">
-              <label className="field"><span>Send to</span>
-                <input value={toEmail} onChange={(e) => setToEmail(e.target.value)} placeholder="recruiter@company.com" /></label>
-              <label className="field"><span>Recipient name (optional)</span>
-                <input value={toName} onChange={(e) => setToName(e.target.value)} /></label>
-              <label className="field"><span>Send from</span>
-                <select value={accountId || accounts[0]?.id || 0} onChange={(e) => setAccountId(Number(e.target.value))}>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.label || a.email}</option>)}
-                </select></label>
-              <button className="btn primary" disabled={busy} onClick={() => void draft(j)}>
-                {busy ? 'Writing draft…' : 'Write draft'}
-              </button>
-            </div>
+            templates.length === 0 ? (
+              <p className="notice">Create a template first, then come back to draft an email for this job.</p>
+            ) : (
+              <div className="inline-form job-draft">
+                <label className="field"><span>Template</span>
+                  <select value={templateId || templates[0].id} onChange={(e) => setTemplateId(Number(e.target.value))}>
+                    {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select></label>
+                <label className="field"><span>Send to</span>
+                  <input value={toEmail} onChange={(e) => setToEmail(e.target.value)} placeholder="recruiter@company.com" /></label>
+                <label className="field"><span>Recipient name (optional)</span>
+                  <input value={toName} onChange={(e) => setToName(e.target.value)} /></label>
+                <label className="field"><span>Send from</span>
+                  <select value={accountId || accounts[0]?.id || 0} onChange={(e) => setAccountId(Number(e.target.value))}>
+                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.label || a.email}</option>)}
+                  </select></label>
+                <button className="btn primary" disabled={busy} onClick={() => void createDraft(j)}>
+                  {busy ? 'Creating…' : 'Create draft'}
+                </button>
+              </div>
+            )
           )}
         </div>
       ))}

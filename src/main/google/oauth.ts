@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import type { AddressInfo } from 'net'
 import { decryptSecret, encryptSecret, getDb, getSetting } from '../db'
 import { getProfile, type GmailDeps } from './gmail'
+import { googleFetch } from './net'
 import { base64url, buildAuthUrl, createPkcePair, isCallbackRequest, parseCallback } from './pkce'
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -36,7 +37,7 @@ function clientCreds(): { clientId: string; clientSecret: string } {
 }
 
 async function tokenRequest(params: Record<string, string>): Promise<TokenResponse> {
-  const res = await fetch(TOKEN_URL, {
+  const res = await googleFetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(params).toString()
@@ -75,7 +76,8 @@ export async function getAccessToken(accountId: number, forceRefresh = false): P
 }
 
 export const gmailDeps = (accountId: number): GmailDeps => ({
-  getToken: (force) => getAccessToken(accountId, force)
+  getToken: (force) => getAccessToken(accountId, force),
+  fetchFn: googleFetch
 })
 
 const escapeHtml = (s: string): string =>
@@ -143,7 +145,7 @@ export async function connectGmail(): Promise<number> {
   if (!t.refresh_token) {
     throw new Error('Google did not return a refresh token. Remove Email Machine from your Google account permissions and connect again.')
   }
-  const { emailAddress } = await getProfile({ getToken: async () => t.access_token })
+  const { emailAddress } = await getProfile({ getToken: async () => t.access_token, fetchFn: googleFetch })
 
   const db = getDb()
   const existing = db.prepare("SELECT id FROM accounts WHERE auth_type='gmail' AND lower(email)=lower(?)").get(emailAddress) as

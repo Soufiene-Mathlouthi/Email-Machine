@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer'
-import { existsSync } from 'fs'
-import { basename } from 'path'
-import { decryptSecret, getDb, getSetting } from './db'
+import type { EmailAttachment } from '@shared/types'
+import { missingAttachment } from './attachments'
+import { decryptSecret, getDb } from './db'
 import { composeMime, formatFrom } from './mime'
 import { gmailDeps } from './google/oauth'
 import { getMessageIdHeader, getProfile, sendRaw } from './google/gmail'
@@ -50,12 +50,13 @@ export async function verifyAccount(accountId: number): Promise<void> {
 
 export async function sendEmail(
   accountId: number,
-  msg: { to: string; subject: string; body: string },
+  msg: { to: string; subject: string; body: string; attachments: EmailAttachment[] },
   thread?: ThreadInfo
 ): Promise<{ messageId: string; threadId: string }> {
   const row = getAccount(accountId)
-  const cvPath = getSetting('cvPath')
-  const attachments = cvPath && existsSync(cvPath) ? [{ filename: basename(cvPath), path: cvPath }] : []
+  const { attachments } = msg
+  const missing = missingAttachment(attachments)
+  if (missing) throw new Error(`Attachment "${missing.filename}" is missing from the app's storage. Re-add it to the template.`)
   const from = formatFrom(row.label, row.email)
   const threading = thread?.inReplyTo ? { inReplyTo: thread.inReplyTo, references: thread.references || thread.inReplyTo } : {}
 

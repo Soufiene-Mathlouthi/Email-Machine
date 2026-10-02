@@ -208,6 +208,7 @@ export default function Outbox() {
                 </td>
                 <td>{e.toEmail}</td>
                 <td className="ellipsis subject-cell">
+                  {e.attachmentCount > 0 && <span className="tag" title={`${e.attachmentCount} attached file(s)`}>📎 {e.attachmentCount}</span>}
                   {e.step > 0 && <span className="tag accent">Follow-up {e.step}</span>}
                   {e.repliedAt !== null && <span className="tag ok">Replied</span>}
                   {e.stopReason === 'bounced' && <span className="tag bad">Bounced</span>}

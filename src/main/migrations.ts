@@ -68,8 +68,20 @@ ALTER TABLE emails ADD COLUMN stop_reason TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_emails_parent ON emails(parent_id);
 `
 
+const V3 = `
+CREATE TABLE IF NOT EXISTS template_attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  path TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_template_attachments_template ON template_attachments(template_id);
+ALTER TABLE emails ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]';
+`
+
 // Append-only: never edit a shipped migration, add a new one.
-export const MIGRATIONS = [V1, V2]
+export const MIGRATIONS = [V1, V2, V3]
 
 export function runMigrations(db: Database.Database): number {
   const current = db.pragma('user_version', { simple: true }) as number

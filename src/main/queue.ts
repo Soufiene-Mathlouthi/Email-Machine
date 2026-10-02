@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import type { QueueState } from '@shared/types'
 import { getDb, getSetting } from './db'
+import { parseAttachments } from './attachments'
 import { sendEmail } from './mailer'
 import { selectNextEligible } from './queue-select'
 
@@ -52,7 +53,11 @@ async function tick(): Promise<void> {
     const thread = parent
       ? { inReplyTo: parent.message_id, references: parent.message_id, gmailThreadId: parent.thread_id }
       : undefined
-    const sent = await sendEmail(email.account_id, { to: email.to_email, subject: email.subject, body: email.body }, thread)
+    const sent = await sendEmail(
+      email.account_id,
+      { to: email.to_email, subject: email.subject, body: email.body, attachments: parseAttachments(email.attachments) },
+      thread
+    )
     db.prepare("UPDATE emails SET status = 'sent', sent_at = ?, error = '', message_id = ?, thread_id = ? WHERE id = ?").run(
       Date.now(), sent.messageId, sent.threadId, email.id
     )

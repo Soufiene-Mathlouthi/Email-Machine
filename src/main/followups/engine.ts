@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import type { FollowUpRunSummary } from '@shared/types'
 import { renderTemplate } from '@shared/template'
+import { snapshotForTemplate } from '../attachments'
 import { DAY_MS, classifyThread, followUpSubject, nextFollowUp, parseFollowUpConfig, type SequenceEmail } from './rules'
 
 export interface EngineDeps {
@@ -132,8 +133,8 @@ function createDueDrafts(db: Database.Database, now: number): number {
   )
   const template = db.prepare('SELECT body FROM templates WHERE id = ?')
   const insert = db.prepare(
-    `INSERT INTO emails (account_id, contact_id, job_id, to_email, subject, body, status, parent_id, step, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
+    `INSERT INTO emails (account_id, contact_id, job_id, to_email, subject, body, status, parent_id, step, created_at, attachments)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`
   )
 
   let created = 0
@@ -146,7 +147,7 @@ function createDueDrafts(db: Database.Database, now: number): number {
     insert.run(
       o.accountId, o.contactId, o.jobId, o.toEmail,
       followUpSubject(o.subject), renderTemplate(tpl.body, varsFor(db, o)),
-      o.id, next.step, now
+      o.id, next.step, now, snapshotForTemplate(db, next.templateId)
     )
     created++
   }

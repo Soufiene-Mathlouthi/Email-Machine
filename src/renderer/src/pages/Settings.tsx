@@ -86,7 +86,7 @@ export default function Settings() {
       <header className="page-head">
         <div>
           <h1>Settings</h1>
-          <p className="subtitle">Sending accounts, pacing, and attachments.</p>
+          <p className="subtitle">Sending accounts and pacing.</p>
         </div>
       </header>
 
@@ -183,17 +183,11 @@ export default function Settings() {
         <h2>Sending</h2>
       </div>
       <section className="panel">
-        <div className="grid3">
+        <div className="grid2">
           <label className="field"><span>Minimum delay between emails (seconds)</span>
             <input type="number" min={0} value={v.minDelaySec} onChange={(e) => setDraft({ ...draft, minDelaySec: Number(e.target.value) })} /></label>
           <label className="field"><span>Maximum delay (seconds)</span>
             <input type="number" min={0} value={v.maxDelaySec} onChange={(e) => setDraft({ ...draft, maxDelaySec: Number(e.target.value) })} /></label>
-          <label className="field"><span>CV attachment</span>
-            <div className="row tight">
-              <input readOnly value={v.cvPath} placeholder="No file attached" />
-              <button className="btn" onClick={() => void invoke<string>('dialog:pickCv').then((p) => p && setDraft({ ...draft, cvPath: p }))}>Choose</button>
-              {v.cvPath && <button className="btn" onClick={() => setDraft({ ...draft, cvPath: '' })}>Remove</button>}
-            </div></label>
         </div>
         <div className="row">
           <button className="btn primary" disabled={!dirty} onClick={() => void saveSettings()}>Save settings</button>

@@ -35,14 +35,40 @@ export interface Contact {
 
 export type ContactInput = Omit<Contact, 'id'> & { id?: number }
 
+export interface TemplateAttachment {
+  id: number
+  filename: string
+  size: number
+}
+
 export interface Template {
   id: number
   name: string
   subject: string
   body: string
+  attachments: TemplateAttachment[]
 }
 
-export type TemplateInput = Omit<Template, 'id'> & { id?: number }
+/** addFiles are source paths picked by the user; they are copied into the app's own folder on save. */
+export interface TemplateInput {
+  id?: number
+  name: string
+  subject: string
+  body: string
+  addFiles?: string[]
+  removeAttachmentIds?: number[]
+}
+
+export interface EmailAttachment {
+  filename: string
+  path: string
+}
+
+export interface PickedFile {
+  path: string
+  filename: string
+  size: number
+}
 
 export interface Job {
   id: number
@@ -75,12 +101,12 @@ export interface OutboxEmail {
   repliedAt: number | null
   followupsStopped: boolean
   stopReason: '' | 'replied' | 'manual' | 'bounced'
+  attachmentCount: number
 }
 
 export interface Settings {
   minDelaySec: number
   maxDelaySec: number
-  cvPath: string
   apiToken: string
   serverPort: number
   googleClientId: string
@@ -91,7 +117,6 @@ export interface Settings {
 export interface SettingsInput {
   minDelaySec?: number
   maxDelaySec?: number
-  cvPath?: string
   googleClientId?: string
   googleClientSecret?: string
   followUps?: FollowUpConfig

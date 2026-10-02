@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
-import { getDb } from './db'
+import { migrateGlobalCv } from './attachments'
+import { getDb, getSetting, setSetting } from './db'
 import { registerIpc } from './ipc'
 import { startLocalServer } from './server'
 import { startFollowUpScheduler } from './followups/scheduler'
@@ -34,7 +35,13 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  getDb()
+  const db = getDb()
+  // One-time: the old global CV setting becomes per-template attachments.
+  const legacyCv = getSetting('cvPath')
+  if (legacyCv) {
+    migrateGlobalCv(db, join(app.getPath('userData'), 'attachments'), legacyCv)
+    setSetting('cvPath', '')
+  }
   registerIpc()
   startLocalServer()
   startFollowUpScheduler()

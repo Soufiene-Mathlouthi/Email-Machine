@@ -354,6 +354,13 @@ input[type="checkbox"]:focus { box-shadow: none; }
 .tag.accent { background: var(--primary-soft-2); color: var(--primary-hover); }
 .tag.ok { background: var(--success-soft); color: var(--success-strong); }
 .tag.bad { background: var(--danger-soft); color: var(--danger-strong); }
+.attach-list { display: flex; flex-direction: column; gap: 6px; margin: 0 0 var(--s3); }
+.attach-item {
+  display: flex; align-items: center; gap: var(--s2); padding: 6px var(--s3); border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--bg); font-size: 13px;
+}
+.attach-item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-item.new { border-color: var(--primary); background: var(--primary-soft); }
 .guide { margin: 0 0 var(--s4); padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
 .guide summary { font-weight: 600; cursor: pointer; }
 .guide ol { margin: var(--s3) 0 0; padding-left: var(--s5); display: grid; gap: var(--s2); color: var(--text-2); }
@@ -378,3 +385,4 @@ input[type="checkbox"]:focus { box-shadow: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+.field .error-text { max-width: none; white-space: normal; margin: var(--s2) 0 0; }

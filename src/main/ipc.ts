@@ -1,12 +1,14 @@
-import { dialog, ipcMain } from 'electron'
-import { readFileSync } from 'fs'
+import { app, dialog, ipcMain } from 'electron'
+import { readFileSync, statSync } from 'fs'
+import { join } from 'path'
 import Papa from 'papaparse'
 import type {
   Account, AccountInput, Contact, ContactInput, FollowUpRunSummary, Job, JobInput, OutboxEmail,
-  Settings, SettingsInput, Template, TemplateInput
+  PickedFile, Settings, SettingsInput, Template, TemplateInput
 } from '@shared/types'
 import { SERVER_PORT } from '@shared/types'
 import { renderTemplate } from '@shared/template'
+import { applyTemplateChanges, listForTemplate, removeUnreferenced, snapshotForTemplate } from './attachments'
 import { decryptSecret, encryptSecret, getApiToken, getDb, getSetting, setSetting } from './db'
 import { deleteEmails, stopSequences } from './followups/engine'
 import { applyFollowUpUpdate, parseFollowUpConfig } from './followups/rules'
@@ -21,7 +23,8 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R |
 
 const EMAIL_COLS = `id, account_id AS accountId, contact_id AS contactId, job_id AS jobId,
   to_email AS toEmail, subject, body, status, error, sent_at AS sentAt, created_at AS createdAt,
-  parent_id AS parentId, step, replied_at AS repliedAt, followups_stopped AS followupsStopped, stop_reason AS stopReason`
+  parent_id AS parentId, step, replied_at AS repliedAt, followups_stopped AS followupsStopped, stop_reason AS stopReason,
+  json_array_length(attachments) AS attachmentCount`
 
 export function registerIpc(): void {
   const db = getDb()
@@ -125,14 +128,34 @@ export function registerIpc(): void {
   })
 
   // ---------- templates ----------
+  const attachmentsDir = (): string => join(app.getPath('userData'), 'attachments')
+
   handle('templates:list', (): Template[] =>
-    db.prepare('SELECT id, name, subject, body FROM templates ORDER BY id DESC').all() as Template[]
+    (db.prepare('SELECT id, name, subject, body FROM templates ORDER BY id DESC').all() as Omit<Template, 'attachments'>[]).map(
+      (t) => ({ ...t, attachments: listForTemplate(db, t.id) })
+    )
   )
   handle('templates:save', (t: TemplateInput) => {
-    if (t.id) db.prepare('UPDATE templates SET name=?, subject=?, body=? WHERE id=?').run(t.name, t.subject, t.body, t.id)
-    else db.prepare('INSERT INTO templates (name, subject, body) VALUES (?,?,?)').run(t.name, t.subject, t.body)
+    const id = t.id
+      ? (db.prepare('UPDATE templates SET name=?, subject=?, body=? WHERE id=?').run(t.name, t.subject, t.body, t.id), t.id)
+      : Number(db.prepare('INSERT INTO templates (name, subject, body) VALUES (?,?,?)').run(t.name, t.subject, t.body).lastInsertRowid)
+    try {
+      applyTemplateChanges(db, attachmentsDir(), id, t.addFiles, t.removeAttachmentIds)
+    } catch (e) {
+      // A brand-new template whose files were rejected shouldn't linger half-created.
+      if (!t.id) db.prepare('DELETE FROM templates WHERE id=?').run(id)
+      throw e
+    }
   })
-  handle('templates:delete', (id: number) => void db.prepare('DELETE FROM templates WHERE id=?').run(id))
+  handle('templates:delete', (id: number) => {
+    const paths = (db.prepare('SELECT path FROM template_attachments WHERE template_id=?').all(id) as { path: string }[]).map((r) => r.path)
+    db.prepare('DELETE FROM templates WHERE id=?').run(id)
+    removeUnreferenced(db, paths)
+  })
+  handle('dialog:pickFiles', async (): Promise<PickedFile[]> => {
+    const r = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    return r.canceled ? [] : r.filePaths.map((path) => ({ path, filename: path.split(/[\/]/).pop() ?? path, size: statSync(path).size }))
+  })
 
   // ---------- jobs ----------
   handle('jobs:list', (): Job[] =>
@@ -166,16 +189,17 @@ export function registerIpc(): void {
       | { subject: string; body: string }
       | undefined
     if (!tpl) throw new Error('Template not found')
+    const files = snapshotForTemplate(db, p.templateId)
     const getContact = db.prepare('SELECT * FROM contacts WHERE id=?')
     const insert = db.prepare(
-      "INSERT INTO emails (account_id, contact_id, to_email, subject, body, status, created_at) VALUES (?,?,?,?,?,'draft',?)"
+      "INSERT INTO emails (account_id, contact_id, to_email, subject, body, status, created_at, attachments) VALUES (?,?,?,?,?,'draft',?,?)"
     )
     db.transaction(() => {
       for (const id of p.contactIds) {
         const c = getContact.get(id) as Contact | undefined
         if (!c) continue
         const vars = { name: c.name, firstName: c.name.split(' ')[0] ?? '', company: c.company, role: c.role, email: c.email }
-        insert.run(p.accountId, c.id, c.email, renderTemplate(tpl.subject, vars), renderTemplate(tpl.body, vars), Date.now())
+        insert.run(p.accountId, c.id, c.email, renderTemplate(tpl.subject, vars), renderTemplate(tpl.body, vars), Date.now(), files)
       }
     })()
     broadcast('emails:changed')
@@ -196,8 +220,8 @@ export function registerIpc(): void {
     const name = p.recipientName.trim()
     const vars = { name, firstName: name.split(' ')[0] ?? '', company: job.company, role: job.title, email: to }
     db.prepare(
-      "INSERT INTO emails (account_id, job_id, to_email, subject, body, status, created_at) VALUES (?,?,?,?,?,'draft',?)"
-    ).run(p.accountId, p.jobId, to, renderTemplate(tpl.subject, vars), renderTemplate(tpl.body, vars), Date.now())
+      "INSERT INTO emails (account_id, job_id, to_email, subject, body, status, created_at, attachments) VALUES (?,?,?,?,?,'draft',?,?)"
+    ).run(p.accountId, p.jobId, to, renderTemplate(tpl.subject, vars), renderTemplate(tpl.body, vars), Date.now(), snapshotForTemplate(db, p.templateId))
     broadcast('emails:changed')
   })
 
@@ -242,7 +266,6 @@ export function registerIpc(): void {
   handle('settings:get', (): Settings => ({
     minDelaySec: Number(getSetting('minDelaySec', '30')),
     maxDelaySec: Number(getSetting('maxDelaySec', '120')),
-    cvPath: getSetting('cvPath'),
     apiToken: getApiToken(),
     serverPort: SERVER_PORT,
     googleClientId: getSetting('googleClientId'),
@@ -253,20 +276,11 @@ export function registerIpc(): void {
   handle('settings:set', (s: SettingsInput) => {
     if (s.minDelaySec !== undefined) setSetting('minDelaySec', String(s.minDelaySec))
     if (s.maxDelaySec !== undefined) setSetting('maxDelaySec', String(s.maxDelaySec))
-    if (s.cvPath !== undefined) setSetting('cvPath', s.cvPath)
     if (s.googleClientId !== undefined) setSetting('googleClientId', s.googleClientId.trim())
     if (s.googleClientSecret) setSetting('googleClientSecretEnc', encryptSecret(s.googleClientSecret.trim()))
     if (s.followUps !== undefined) {
       const next = applyFollowUpUpdate(parseFollowUpConfig(getSetting('followUps')), s.followUps, Date.now())
       setSetting('followUps', JSON.stringify(next))
     }
-  })
-
-  handle('dialog:pickCv', async () => {
-    const r = await dialog.showOpenDialog({
-      filters: [{ name: 'Documents', extensions: ['pdf', 'doc', 'docx'] }],
-      properties: ['openFile']
-    })
-    return r.canceled ? '' : r.filePaths[0]
   })
 }

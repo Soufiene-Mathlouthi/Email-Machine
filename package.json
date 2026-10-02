@@ -20,7 +20,8 @@
     "nodemailer": "^10.0.12",
     "papaparse": "^5.7.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "read-excel-file": "^9.3.10"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
@@ -33,6 +34,7 @@
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "fflate": "^0.8.3",
     "typescript": "^7.0.2",
     "vite": "^7.0.0",
     "vitest": "^5.0.2"

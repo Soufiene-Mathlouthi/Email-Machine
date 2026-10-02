@@ -35,6 +35,11 @@ export interface Contact {
 
 export type ContactInput = Omit<Contact, 'id'> & { id?: number }
 
+export type ContactField = 'name' | 'email' | 'company' | 'role' | 'notes'
+export type ColumnMapping = Partial<Record<ContactField, number>>
+export interface ImportPreview { path: string; headers: string[]; sample: string[][]; total: number; mapping: ColumnMapping }
+export interface ImportResult { added: number; duplicates: number; invalid: number }
+
 export interface TemplateAttachment {
   id: number
   filename: string
@@ -70,6 +75,23 @@ export interface PickedFile {
   size: number
 }
 
+export interface PreviewAttachment {
+  filename: string
+  size: number
+  missing: boolean
+}
+
+export interface EmailPreview {
+  from: string
+  attachments: PreviewAttachment[]
+  duplicateOf: number | null
+}
+
+export interface SetStatusResult {
+  changed: number[]
+  held: number[]
+}
+
 export interface Job {
   id: number
   title: string
@@ -102,6 +124,7 @@ export interface OutboxEmail {
   followupsStopped: boolean
   stopReason: '' | 'replied' | 'manual' | 'bounced'
   attachmentCount: number
+  duplicateOf: number | null
 }
 
 export interface Settings {
@@ -112,6 +135,7 @@ export interface Settings {
   googleClientId: string
   googleClientSecretSet: boolean
   followUps: FollowUpConfig
+  duplicateWindowDays: number
 }
 
 export interface SettingsInput {
@@ -120,6 +144,7 @@ export interface SettingsInput {
   googleClientId?: string
   googleClientSecret?: string
   followUps?: FollowUpConfig
+  duplicateWindowDays?: number
 }
 
 export interface QueueState {

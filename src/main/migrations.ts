@@ -86,7 +86,11 @@ const V4 = `
 UPDATE accounts SET daily_cap = 0;
 `
 
-export const MIGRATIONS = [V1, V2, V3, V4]
+const V5 = `
+CREATE INDEX IF NOT EXISTS idx_emails_to ON emails(lower(trim(to_email)));
+`
+
+export const MIGRATIONS = [V1, V2, V3, V4, V5]
 
 export function runMigrations(db: Database.Database): number {
   const current = db.pragma('user_version', { simple: true }) as number

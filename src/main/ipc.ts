@@ -1,20 +1,22 @@
 import { app, dialog, ipcMain } from 'electron'
-import { readFileSync, statSync } from 'fs'
+import { statSync } from 'fs'
 import { join } from 'path'
-import Papa from 'papaparse'
 import type {
-  Account, AccountInput, Contact, ContactInput, FollowUpRunSummary, Job, JobInput, OutboxEmail,
-  PickedFile, Settings, SettingsInput, Template, TemplateInput
+  Account, AccountInput, ColumnMapping, Contact, ContactInput, EmailPreview, FollowUpRunSummary, ImportPreview, ImportResult, Job, JobInput, OutboxEmail,
+  PickedFile, Settings, SettingsInput, SetStatusResult, Template, TemplateInput
 } from '@shared/types'
 import { SERVER_PORT } from '@shared/types'
 import { renderTemplate } from '@shared/template'
 import { applyTemplateChanges, listForTemplate, removeUnreferenced, snapshotForTemplate } from './attachments'
+import { guessMapping, importRows, readSheet } from './contact-import'
 import { decryptSecret, encryptSecret, getApiToken, getDb, getSetting, setSetting } from './db'
+import { findDuplicates, queueEmails, updateEmail } from './duplicates'
 import { deleteEmails, stopSequences } from './followups/engine'
 import { applyFollowUpUpdate, parseFollowUpConfig } from './followups/rules'
 import { runFollowUps } from './followups/scheduler'
 import { cancelGmailConnect, connectGmail, forgetAccountToken } from './google/oauth'
 import { verifyAccount } from './mailer'
+import { buildPreview } from './preview'
 import { broadcast, queueState, startQueue, stopQueue } from './queue'
 
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>): void {
@@ -25,6 +27,8 @@ const EMAIL_COLS = `id, account_id AS accountId, contact_id AS contactId, job_id
   to_email AS toEmail, subject, body, status, error, sent_at AS sentAt, created_at AS createdAt,
   parent_id AS parentId, step, replied_at AS repliedAt, followups_stopped AS followupsStopped, stop_reason AS stopReason,
   json_array_length(attachments) AS attachmentCount`
+
+const duplicateWindow = (): number => Number(getSetting('duplicateWindowDays', '30'))
 
 export function registerIpc(): void {
   const db = getDb()
@@ -105,27 +109,25 @@ export function registerIpc(): void {
 
   handle('contacts:delete', (id: number) => void db.prepare('DELETE FROM contacts WHERE id=?').run(id))
 
-  handle('contacts:importCsv', async () => {
-    const pick = await dialog.showOpenDialog({ filters: [{ name: 'CSV', extensions: ['csv'] }], properties: ['openFile'] })
-    if (pick.canceled || !pick.filePaths[0]) return { added: 0, skipped: 0 }
-    const parsed = Papa.parse<Record<string, string>>(readFileSync(pick.filePaths[0], 'utf8'), {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => h.trim().toLowerCase()
+  handle('contacts:importPreview', async (): Promise<ImportPreview | null> => {
+    const pick = await dialog.showOpenDialog({
+      filters: [{ name: 'Spreadsheet', extensions: ['csv', 'xlsx'] }],
+      properties: ['openFile']
     })
-    const insert = db.prepare('INSERT OR IGNORE INTO contacts (name, email, company, role, notes) VALUES (?,?,?,?,?)')
-    let added = 0
-    let skipped = 0
-    db.transaction(() => {
-      for (const r of parsed.data) {
-        const email = (r.email ?? '').trim()
-        if (!/^\S+@\S+\.\S+$/.test(email)) { skipped++; continue }
-        const info = insert.run(r.name ?? '', email, r.company ?? '', r.role ?? '', r.notes ?? '')
-        info.changes ? added++ : skipped++
-      }
-    })()
-    return { added, skipped }
+    if (pick.canceled || !pick.filePaths[0]) return null
+    const sheet = await readSheet(pick.filePaths[0])
+    return {
+      path: pick.filePaths[0],
+      headers: sheet.headers,
+      sample: sheet.rows.slice(0, 5),
+      total: sheet.rows.length,
+      mapping: guessMapping(sheet.headers)
+    }
   })
+
+  handle('contacts:importCommit', async (p: { path: string; mapping: ColumnMapping }): Promise<ImportResult> =>
+    importRows(db, (await readSheet(p.path)).rows, p.mapping)
+  )
 
   // ---------- templates ----------
   const attachmentsDir = (): string => join(app.getPath('userData'), 'attachments')
@@ -177,11 +179,19 @@ export function registerIpc(): void {
   handle('jobs:delete', (id: number) => void db.prepare('DELETE FROM jobs WHERE id=?').run(id))
 
   // ---------- emails (outbox) ----------
-  handle('emails:list', (): OutboxEmail[] =>
-    (db.prepare(`SELECT ${EMAIL_COLS} FROM emails ORDER BY id DESC`).all() as (Omit<OutboxEmail, 'followupsStopped'> & {
+  handle('emails:list', (): OutboxEmail[] => {
+    const rows = db.prepare(`SELECT ${EMAIL_COLS} FROM emails ORDER BY id DESC`).all() as (Omit<OutboxEmail, 'followupsStopped' | 'duplicateOf'> & {
       followupsStopped: number
-    })[]).map((e) => ({ ...e, followupsStopped: !!e.followupsStopped }))
-  )
+    })[]
+    const dups = findDuplicates(
+      db,
+      rows.filter((e) => e.status === 'draft' || e.status === 'failed').map((e) => e.id),
+      duplicateWindow()
+    )
+    return rows.map((e) => ({ ...e, followupsStopped: !!e.followupsStopped, duplicateOf: dups.get(e.id) ?? null }))
+  })
+
+  handle('emails:preview', (id: number): EmailPreview | null => buildPreview(db, id, duplicateWindow()) ?? null)
 
   // Create one personalized draft per contact from a template
   handle('emails:createFromTemplate', (p: { templateId: number; contactIds: number[]; accountId: number }) => {
@@ -226,18 +236,25 @@ export function registerIpc(): void {
   })
 
   handle('emails:update', (e: { id: number; toEmail: string; subject: string; body: string }): boolean => {
-    const r = db.prepare("UPDATE emails SET to_email=?, subject=?, body=? WHERE id=? AND status IN ('draft','failed','queued')").run(
-      e.toEmail, e.subject, e.body, e.id
-    )
-    if (r.changes) broadcast('emails:changed')
-    return r.changes > 0
+    const ok = updateEmail(db, e)
+    if (ok) {
+      broadcast('emails:changed')
+      broadcast('queue:state', queueState())
+    }
+    return ok
   })
 
-  handle('emails:setStatus', (p: { ids: number[]; status: 'draft' | 'queued' }) => {
-    const stmt = db.prepare("UPDATE emails SET status=?, error='' WHERE id=? AND status IN ('draft','queued','failed')")
-    db.transaction(() => p.ids.forEach((id) => stmt.run(p.status, id)))()
+  handle('emails:setStatus', (p: { ids: number[]; status: 'draft' | 'queued'; override?: boolean }): SetStatusResult => {
+    const result: SetStatusResult = { changed: [], held: [] }
+    if (p.status === 'queued') {
+      Object.assign(result, queueEmails(db, p.ids, duplicateWindow(), !!p.override))
+    } else {
+      const stmt = db.prepare("UPDATE emails SET status='draft', error='' WHERE id=? AND status IN ('draft','queued','failed')")
+      db.transaction(() => p.ids.forEach((id) => { if (stmt.run(id).changes) result.changed.push(id) }))()
+    }
     broadcast('emails:changed')
     broadcast('queue:state', queueState())
+    return result
   })
 
   handle('emails:delete', (ids: number[]) => {
@@ -270,12 +287,14 @@ export function registerIpc(): void {
     serverPort: SERVER_PORT,
     googleClientId: getSetting('googleClientId'),
     googleClientSecretSet: !!decryptSecret(getSetting('googleClientSecretEnc')),
-    followUps: parseFollowUpConfig(getSetting('followUps'))
+    followUps: parseFollowUpConfig(getSetting('followUps')),
+    duplicateWindowDays: duplicateWindow()
   }))
 
   handle('settings:set', (s: SettingsInput) => {
     if (s.minDelaySec !== undefined) setSetting('minDelaySec', String(s.minDelaySec))
     if (s.maxDelaySec !== undefined) setSetting('maxDelaySec', String(s.maxDelaySec))
+    if (s.duplicateWindowDays !== undefined) setSetting('duplicateWindowDays', String(Math.max(0, Math.floor(s.duplicateWindowDays))))
     if (s.googleClientId !== undefined) setSetting('googleClientId', s.googleClientId.trim())
     if (s.googleClientSecret) setSetting('googleClientSecretEnc', encryptSecret(s.googleClientSecret.trim()))
     if (s.followUps !== undefined) {

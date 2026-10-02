@@ -189,6 +189,9 @@ export default function Settings() {
           <label className="field"><span>Maximum delay (seconds)</span>
             <input type="number" min={0} value={v.maxDelaySec} onChange={(e) => setDraft({ ...draft, maxDelaySec: Number(e.target.value) })} /></label>
         </div>
+        <label className="field"><span>Duplicate window (days, 0 = off)</span>
+          <input type="number" min={0} value={v.duplicateWindowDays} onChange={(e) => setDraft({ ...draft, duplicateWindowDays: Number(e.target.value) })} /></label>
+        <p className="hint">Emails to an address you already emailed within this many days are held in the Outbox until you confirm.</p>
         <div className="row">
           <button className="btn primary" disabled={!dirty} onClick={() => void saveSettings()}>Save settings</button>
           {saved && <span className="saved-note"><Check size={14} /> Saved</span>}

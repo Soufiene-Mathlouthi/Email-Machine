@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react'
-import type { Contact, ContactInput } from '@shared/types'
-import { invoke, useData } from '../lib/api'
+import type { ColumnMapping, Contact, ContactField, ContactInput, ImportPreview, ImportResult } from '@shared/types'
+import { errorText, invoke, useData } from '../lib/api'
 import SearchInput from '../components/SearchInput'
+
+const FIELDS: { key: ContactField; label: string }[] = [
+  { key: 'email', label: 'Email (required)' }, { key: 'name', label: 'Name' }, { key: 'company', label: 'Company' },
+  { key: 'role', label: 'Role' }, { key: 'notes', label: 'Notes' }
+]
 
 const empty: ContactInput = { name: '', email: '', company: '', role: '', notes: '' }
 
@@ -27,10 +32,30 @@ export default function Contacts() {
     reload()
   }
 
-  const importCsv = async () => {
-    const r = await invoke<{ added: number; skipped: number }>('contacts:importCsv')
-    setMsg(`Imported ${r.added} contacts, skipped ${r.skipped} (duplicates or invalid emails).`)
-    reload()
+  const [imp, setImp] = useState<ImportPreview | null>(null)
+  const [mapping, setMapping] = useState<ColumnMapping>({})
+
+  const startImport = async () => {
+    try {
+      const p = await invoke<ImportPreview | null>('contacts:importPreview')
+      if (!p) return
+      setImp(p)
+      setMapping(p.mapping)
+    } catch (e) {
+      setMsg(errorText(e))
+    }
+  }
+
+  const commitImport = async () => {
+    if (!imp) return
+    try {
+      const r = await invoke<ImportResult>('contacts:importCommit', { path: imp.path, mapping })
+      setMsg(`Imported ${r.added}, skipped ${r.duplicates} duplicates, ${r.invalid} invalid emails.`)
+      setImp(null)
+      reload()
+    } catch (e) {
+      setMsg(errorText(e))
+    }
   }
 
   return (
@@ -42,10 +67,42 @@ export default function Contacts() {
         </div>
         <div className="row tight">
           <SearchInput value={query} onChange={setQuery} placeholder="Search contacts…" />
-          <button className="btn" onClick={() => void importCsv()}>Import CSV</button>
+          <button className="btn" onClick={() => void startImport()}>Import CSV / Excel</button>
         </div>
       </header>
       {msg && <p className="notice">{msg}</p>}
+
+      {imp && (
+        <section className="panel">
+          <div className="panel-title">Match columns ({imp.total} rows found)</div>
+          <div className="grid3">
+            {FIELDS.map((f) => (
+              <label className="field" key={f.key}>
+                <span>{f.label}</span>
+                <select value={mapping[f.key] ?? ''} onChange={(e) => {
+                  const next = { ...mapping }
+                  if (e.target.value === '') delete next[f.key]
+                  else next[f.key] = Number(e.target.value)
+                  setMapping(next)
+                }}>
+                  <option value="">— none —</option>
+                  {imp.headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+          <table className="table">
+            <thead><tr>{imp.headers.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
+            <tbody>{imp.sample.map((r, ri) => <tr key={ri}>{imp.headers.map((_, ci) => <td key={ci}>{r[ci]}</td>)}</tr>)}</tbody>
+          </table>
+          <div className="row">
+            <button className="btn primary" disabled={mapping.email === undefined || imp.total === 0} onClick={() => void commitImport()}>
+              Import {imp.total} rows
+            </button>
+            <button className="btn" onClick={() => setImp(null)}>Cancel</button>
+          </div>
+        </section>
+      )}
 
       <section className="panel">
         <div className="panel-title">{form.id ? 'Edit contact' : 'Add a contact'}</div>
@@ -60,7 +117,7 @@ export default function Contacts() {
         <div className="row">
           <button className="btn primary" onClick={() => void save()}>{form.id ? 'Save contact' : 'Add contact'}</button>
           {form.id && <button className="btn" onClick={() => setForm(empty)}>Cancel</button>}
-          <span className="muted small">CSV import columns: name, email, company, role, notes. Only email is required.</span>
+          <span className="muted small">Import a .csv or .xlsx file, then match its columns. Only email is required.</span>
         </div>
       </section>
 

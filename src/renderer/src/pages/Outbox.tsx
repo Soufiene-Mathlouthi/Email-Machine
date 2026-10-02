@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Account, Contact, EmailStatus, OutboxEmail, Template } from '@shared/types'
+import type { Account, Contact, EmailPreview, EmailStatus, OutboxEmail, SetStatusResult, Template } from '@shared/types'
 import { invoke, useData, fmtDate } from '../lib/api'
 import SearchInput from '../components/SearchInput'
 
@@ -74,27 +74,55 @@ export default function Outbox() {
     setBatchOpen(false)
   }
 
-  const setStatus = async (status: 'draft' | 'queued') => {
-    await invoke('emails:setStatus', { ids: selected, status })
+  const [queueMsg, setQueueMsg] = useState('')
+  const setStatus = async (status: 'draft' | 'queued', ids = selected, override = false) => {
+    const r = await invoke<SetStatusResult>('emails:setStatus', { ids, status, override })
     setSelected([])
+    setQueueMsg(
+      status === 'queued'
+        ? `Queued ${r.changed.length}${r.held.length ? `, held ${r.held.length} ${r.held.length === 1 ? 'duplicate' : 'duplicates'} (open one to send anyway).` : '.'}`
+        : ''
+    )
   }
 
   const [editError, setEditError] = useState('')
   const liveEditing = editing ? emails.find((e) => e.id === editing.id) : undefined
   const editLocked = !!editing && (!liveEditing || !canEdit(liveEditing))
 
+  const [preview, setPreview] = useState<EmailPreview | null>(null)
+  useEffect(() => {
+    setPreview(null)
+    if (!editing) return
+    let live = true
+    void invoke<EmailPreview | null>('emails:preview', editing.id).then((p) => live && setPreview(p))
+    return () => { live = false }
+  }, [editing?.id, emails])
+
+  // The duplicate warning describes the saved address, so it only applies while the To field is unchanged.
+  const toChanged = !!editing && !!liveEditing && editing.toEmail.trim().toLowerCase() !== liveEditing.toEmail.trim().toLowerCase()
+  const dupAt = toChanged ? null : (preview?.duplicateOf ?? null)
+
+  const editable = filtered.filter(canEdit)
+  const pos = editing ? editable.findIndex((e) => e.id === editing.id) : -1
+
   const openEditor = (e: OutboxEmail) => {
     setEditError('')
     setEditing(e)
   }
 
-  const saveEdit = async () => {
-    if (!editing) return
+  const saveEdit = async (): Promise<boolean> => {
+    if (!editing) return false
     const ok = await invoke<boolean>('emails:update', {
       id: editing.id, toEmail: editing.toEmail, subject: editing.subject, body: editing.body
     })
     if (ok) setEditing(null)
     else setEditError('Changes not saved: this email was sent or removed while you were reviewing it.')
+    return ok
+  }
+
+  const step = (d: number) => {
+    const n = editable[pos + d]
+    if (n) openEditor(n)
   }
 
   return (
@@ -185,6 +213,8 @@ export default function Outbox() {
         </div>
       </div>
 
+      {queueMsg && <p className="notice">{queueMsg}</p>}
+
       {emails.length === 0 ? (
         <p className="empty">Nothing here yet. Create a batch from a template, or create a draft from a job.</p>
       ) : filtered.length === 0 ? (
@@ -209,6 +239,7 @@ export default function Outbox() {
                 <td>{e.toEmail}</td>
                 <td className="ellipsis subject-cell">
                   {e.attachmentCount > 0 && <span className="tag" title={`${e.attachmentCount} attached file(s)`}>📎 {e.attachmentCount}</span>}
+                  {e.duplicateOf !== null && <span className="tag bad" title={`Already emailed on ${fmtDate(e.duplicateOf)}`}>Duplicate</span>}
                   {e.step > 0 && <span className="tag accent">Follow-up {e.step}</span>}
                   {e.repliedAt !== null && <span className="tag ok">Replied</span>}
                   {e.stopReason === 'bounced' && <span className="tag bad">Bounced</span>}
@@ -238,6 +269,28 @@ export default function Outbox() {
                 {editError || 'This email was sent or removed while you were reviewing it, so it can no longer be edited.'}
               </div>
             )}
+            {preview && (
+              <div className="preview-meta">
+                <div><span className="muted">From</span> {preview.from}</div>
+                {preview.attachments.length > 0 && (
+                  <ul className="attach-list">
+                    {preview.attachments.map((a, i) => (
+                      <li className={`attach-item ${a.missing ? 'bad' : ''}`} key={i}>
+                        📎 {a.filename}
+                        <span className="muted"> {a.missing ? 'file missing from storage, re-add it to the template' : `${Math.max(1, Math.round(a.size / 1024))} KB`}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {dupAt !== null && (
+                  <div className="status-line bad" role="alert">
+                    You already emailed this address on {fmtDate(dupAt)}.{' '}
+                    <button className="link" disabled={editLocked}
+                      onClick={() => void saveEdit().then(async (ok) => { if (ok) await setStatus('queued', [editing.id], true) })}>Send anyway</button>
+                  </div>
+                )}
+              </div>
+            )}
             <label className="field"><span>To</span>
               <input value={editing.toEmail} onChange={(e) => setEditing({ ...editing, toEmail: e.target.value })} /></label>
             <label className="field"><span>Subject</span>
@@ -246,7 +299,13 @@ export default function Outbox() {
               <textarea rows={16} value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} /></label>
             <div className="row">
               <button className="btn primary" disabled={editLocked} onClick={() => void saveEdit()}>Save changes</button>
+              <button className="btn" disabled={editLocked || dupAt !== null}
+                onClick={() => void saveEdit().then(async (ok) => { if (ok) await setStatus('queued', [editing.id]) })}>Add to queue</button>
               <button className="btn" onClick={() => setEditing(null)}>Close</button>
+              <span className="row tight" style={{ marginLeft: 'auto' }}>
+                <button className="btn" aria-label="Previous email" disabled={pos <= 0} onClick={() => step(-1)}>‹</button>
+                <button className="btn" aria-label="Next email" disabled={pos < 0 || pos >= editable.length - 1} onClick={() => step(1)}>›</button>
+              </span>
             </div>
           </div>
         </div>

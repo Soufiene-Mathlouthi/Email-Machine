@@ -54,6 +54,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: NavTarget)
     return { sentToday, sentTotal, queued, failed, drafts, successRate, replied, followUpDrafts, replyRate }
   }, [emails, day])
 
+  const unlimited = accounts.some((a) => a.dailyCap === 0)
   const dailyCapacity = accounts.reduce((sum, a) => sum + a.dailyCap, 0)
 
   const recent = useMemo(
@@ -103,7 +104,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: NavTarget)
 
       <div className="stat-grid">
         <StatTile label="Sent today" value={stats.sentToday} tone="ok"
-          hint={dailyCapacity ? `of ${dailyCapacity} daily capacity` : 'no accounts yet'} />
+          hint={!accounts.length ? 'no accounts yet' : unlimited ? 'no daily limit' : `of ${dailyCapacity} daily capacity`} />
         <StatTile label="In queue" value={stats.queued}
           hint={`${stats.drafts} ${stats.drafts === 1 ? 'draft' : 'drafts'} awaiting review` +
             (stats.followUpDrafts ? ` · ${stats.followUpDrafts} follow-up${stats.followUpDrafts === 1 ? '' : 's'} to review` : '')} />

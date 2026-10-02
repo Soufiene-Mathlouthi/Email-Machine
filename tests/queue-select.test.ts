@@ -33,4 +33,10 @@ describe('selectNextEligible', () => {
     add(db, {})
     expect(selectNextEligible(db)).toBeUndefined()
   })
+  it('treats a cap of 0 as unlimited', () => {
+    const db = seed(0)
+    for (let i = 0; i < 3; i++) add(db, { status: 'sent', sent_at: Date.now() })
+    const queued = add(db, {})
+    expect(selectNextEligible(db)?.id).toBe(queued)
+  })
 })

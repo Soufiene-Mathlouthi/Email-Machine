@@ -81,7 +81,12 @@ ALTER TABLE emails ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]';
 `
 
 // Append-only: never edit a shipped migration, add a new one.
-export const MIGRATIONS = [V1, V2, V3]
+// 0 = no daily limit.
+const V4 = `
+UPDATE accounts SET daily_cap = 0;
+`
+
+export const MIGRATIONS = [V1, V2, V3, V4]
 
 export function runMigrations(db: Database.Database): number {
   const current = db.pragma('user_version', { simple: true }) as number

@@ -10,7 +10,7 @@ export interface QueuedRow {
   attachments: string
 }
 
-// Next queued email whose account is under its daily cap and whose sequence hasn't been stopped.
+// Next queued email whose account is under its daily cap (0 = unlimited) and whose sequence hasn't been stopped.
 export function selectNextEligible(db: Database.Database): QueuedRow | undefined {
   return db
     .prepare(
@@ -19,10 +19,10 @@ export function selectNextEligible(db: Database.Database): QueuedRow | undefined
        WHERE e.status = 'queued'
          AND (e.parent_id IS NULL OR NOT EXISTS (
                SELECT 1 FROM emails p WHERE p.id = e.parent_id AND p.followups_stopped = 1))
-         AND (SELECT COUNT(*) FROM emails s
+         AND ((SELECT COUNT(*) FROM emails s
               WHERE s.account_id = e.account_id AND s.status = 'sent'
                 AND date(s.sent_at / 1000, 'unixepoch', 'localtime') = date('now', 'localtime')
-             ) < a.daily_cap
+             ) < a.daily_cap OR a.daily_cap = 0)
        ORDER BY e.id LIMIT 1`
     )
     .get() as QueuedRow | undefined

@@ -12,7 +12,7 @@ const PRESETS: Record<string, Pick<AccountInput, 'host' | 'port' | 'secure'>> = 
 }
 
 const blankAccount: AccountInput = {
-  label: '', email: '', username: '', password: '', dailyCap: 40, ...PRESETS.Gmail
+  label: '', email: '', username: '', password: '', dailyCap: 0, ...PRESETS.Gmail
 }
 
 function presetFor(f: AccountInput): string {
@@ -110,7 +110,7 @@ export default function Settings() {
               <strong>{a.label || a.email}</strong>
               <span className={`tag ${a.authType === 'gmail' ? 'accent' : ''}`}>{a.authType === 'gmail' ? 'Gmail' : 'SMTP'}</span>
               <div className="muted small">
-                {a.email} · {a.authType === 'gmail' ? 'Gmail API' : `${a.host}:${a.port}`} · max {a.dailyCap}/day
+                {a.email} · {a.authType === 'gmail' ? 'Gmail API' : `${a.host}:${a.port}`} · {a.dailyCap > 0 ? `max ${a.dailyCap}/day` : 'no daily limit'}
               </div>
             </div>
             <span className="actions">
@@ -138,8 +138,8 @@ export default function Settings() {
           <div className="grid2">
             <label className="field"><span>Label</span>
               <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Your name" /></label>
-            <label className="field"><span>Daily send limit</span>
-              <input type="number" value={form.dailyCap} onChange={(e) => setForm({ ...form, dailyCap: Number(e.target.value) })} /></label>
+            <label className="field"><span>Daily send limit (0 = unlimited)</span>
+              <input type="number" min={0} value={form.dailyCap} onChange={(e) => setForm({ ...form, dailyCap: Number(e.target.value) })} /></label>
           </div>
         ) : (<>
         {!form.id && (
@@ -163,8 +163,8 @@ export default function Settings() {
             <input value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} /></label>
           <label className="field"><span>Port</span>
             <input type="number" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} /></label>
-          <label className="field"><span>Daily send limit</span>
-            <input type="number" value={form.dailyCap} onChange={(e) => setForm({ ...form, dailyCap: Number(e.target.value) })} /></label>
+          <label className="field"><span>Daily send limit (0 = unlimited)</span>
+            <input type="number" min={0} value={form.dailyCap} onChange={(e) => setForm({ ...form, dailyCap: Number(e.target.value) })} /></label>
         </div>
         <label className="check">
           <input type="checkbox" checked={form.secure} onChange={(e) => setForm({ ...form, secure: e.target.checked })} />

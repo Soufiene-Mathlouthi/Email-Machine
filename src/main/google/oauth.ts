@@ -159,7 +159,7 @@ export async function connectGmail(): Promise<number> {
     id = Number(
       db.prepare(
         `INSERT INTO accounts (label, email, host, port, secure, username, password_enc, daily_cap, auth_type, oauth_refresh_enc)
-         VALUES (?, ?, 'gmail-api', 0, 1, ?, '', 40, 'gmail', ?)`
+         VALUES (?, ?, 'gmail-api', 0, 1, ?, '', 0, 'gmail', ?)`
       ).run(emailAddress, emailAddress, emailAddress, encryptSecret(t.refresh_token)).lastInsertRowid
     )
   }

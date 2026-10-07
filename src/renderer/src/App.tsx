@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { QueueState } from '@shared/types'
+import type { Account, QueueState } from '@shared/types'
 import {
   LayoutDashboard, Inbox, Users, FileText, Briefcase, Settings as SettingsIcon, Mail, Play, Pause, type LucideIcon
 } from 'lucide-react'
-import { invoke } from './lib/api'
+import { invoke, useData } from './lib/api'
+import AccountChip from './components/AccountChip'
 import Dashboard from './pages/Dashboard'
 import Outbox from './pages/Outbox'
 import Contacts from './pages/Contacts'
@@ -72,6 +73,7 @@ function MachineStrip({ q }: { q: QueueState }) {
 export default function App() {
   const [tab, setTab] = useState<Tab>('Dashboard')
   const q = useQueue()
+  const [accounts] = useData<Account[]>('accounts:list', [], ['accounts:changed'])
 
   return (
     <div className="app">
@@ -94,6 +96,7 @@ export default function App() {
           })}
         </nav>
         <MachineStrip q={q} />
+        <AccountChip accounts={accounts} onOpenSettings={() => setTab('Settings')} />
       </aside>
       <main className="main">
         <div className="page" key={tab}>

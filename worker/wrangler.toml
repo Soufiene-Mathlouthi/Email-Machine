@@ -1,0 +1,14 @@
+name = "email-machine-token-proxy"
+main = "index.ts"
+compatibility_date = "2025-01-01"
+
+# 30 requests per minute per IP.
+[[unsafe.bindings]]
+name = "LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
+# Secrets are set once with:
+#   npx wrangler secret put GOOGLE_CLIENT_ID
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET

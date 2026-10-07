@@ -14,7 +14,7 @@ import { findDuplicates, queueEmails, updateEmail } from './duplicates'
 import { deleteEmails, stopSequences } from './followups/engine'
 import { applyFollowUpUpdate, parseFollowUpConfig } from './followups/rules'
 import { runFollowUps } from './followups/scheduler'
-import { cancelGmailConnect, connectGmail, forgetAccountToken } from './google/oauth'
+import { cancelGmailConnect, clientConfigured, connectGmail, forgetAccountToken, hasBuiltInClient, signOutGmail } from './google/oauth'
 import { verifyAccount } from './mailer'
 import { buildPreview } from './preview'
 import { broadcast, queueState, startQueue, stopQueue } from './queue'
@@ -46,11 +46,13 @@ export function registerIpc(): void {
       hasPassword: !!r.password_enc,
       dailyCap: r.daily_cap as number,
       authType: r.auth_type as 'smtp' | 'gmail',
-      authError: r.auth_error as string
+      authError: r.auth_error as string,
+      signedOut: r.auth_type === 'gmail' && !r.oauth_refresh_enc
     }))
   )
 
   handle('accounts:save', (a: AccountInput) => {
+    broadcast('accounts:changed')
     if (a.id) {
       const kind = db.prepare('SELECT auth_type FROM accounts WHERE id=?').get(a.id) as { auth_type: string } | undefined
       if (kind?.auth_type === 'gmail') {
@@ -73,6 +75,7 @@ export function registerIpc(): void {
   handle('accounts:delete', (id: number) => {
     db.prepare('DELETE FROM accounts WHERE id=?').run(id)
     forgetAccountToken(id)
+    broadcast('accounts:changed')
     broadcast('emails:changed')
   })
 
@@ -87,8 +90,14 @@ export function registerIpc(): void {
 
   handle('gmail:connect', async () => {
     await connectGmail()
+    broadcast('accounts:changed')
   })
   handle('gmail:cancel', () => cancelGmailConnect())
+  handle('gmail:signOut', async (id: number) => {
+    await signOutGmail(id)
+    broadcast('accounts:changed')
+    broadcast('emails:changed')
+  })
 
   // ---------- contacts ----------
   handle('contacts:list', (): Contact[] =>
@@ -287,6 +296,8 @@ export function registerIpc(): void {
     serverPort: SERVER_PORT,
     googleClientId: getSetting('googleClientId'),
     googleClientSecretSet: !!decryptSecret(getSetting('googleClientSecretEnc')),
+    googleBuiltIn: hasBuiltInClient(),
+    googleReady: clientConfigured(),
     followUps: parseFollowUpConfig(getSetting('followUps')),
     duplicateWindowDays: duplicateWindow()
   }))

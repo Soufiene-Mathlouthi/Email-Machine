@@ -4,7 +4,8 @@ export const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.metadata',
   'openid',
-  'email'
+  'email',
+  'profile'
 ]
 
 export const base64url = (buf: Buffer): string =>

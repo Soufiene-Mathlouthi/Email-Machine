@@ -5,9 +5,13 @@ import type { AddressInfo } from 'net'
 import { decryptSecret, encryptSecret, getDb, getSetting } from '../db'
 import { getProfile, type GmailDeps } from './gmail'
 import { googleFetch } from './net'
+import { displayNameFor, signOutAccount } from './account'
+import { isProxy, resolveClient, type BuiltInClient, type GoogleClient, type UserClient } from './client'
 import { base64url, buildAuthUrl, createPkcePair, isCallbackRequest, parseCallback } from './pkce'
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
+const REVOKE_URL = 'https://oauth2.googleapis.com/revoke'
+const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo'
 const TIMEOUT_MS = 5 * 60_000
 export const REVOKED_MESSAGE = 'Google access expired or was revoked. Reconnect this account.'
 const CANCELLED = 'Google sign-in was cancelled.'
@@ -29,19 +33,39 @@ class TokenError extends Error {
   }
 }
 
-function clientCreds(): { clientId: string; clientSecret: string } {
-  const clientId = getSetting('googleClientId').trim()
-  const clientSecret = decryptSecret(getSetting('googleClientSecretEnc'))
-  if (!clientId || !clientSecret) throw new Error('Add your Google OAuth client first.')
-  return { clientId, clientSecret }
+// Baked in at build time from the git-ignored .env (see .env.example). The secret itself is never shipped:
+// it lives on the token proxy, so only the public client ID and the proxy URL are embedded.
+const BUILT_IN: BuiltInClient = {
+  clientId: import.meta.env.MAIN_VITE_GOOGLE_CLIENT_ID ?? '',
+  proxyUrl: import.meta.env.MAIN_VITE_TOKEN_PROXY_URL ?? ''
 }
 
-async function tokenRequest(params: Record<string, string>): Promise<TokenResponse> {
-  const res = await googleFetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(params).toString()
-  })
+const storedClient = (): UserClient => ({
+  clientId: getSetting('googleClientId'),
+  clientSecret: decryptSecret(getSetting('googleClientSecretEnc'))
+})
+
+export const hasBuiltInClient = (): boolean => resolveClient(BUILT_IN, { clientId: '', clientSecret: '' }) !== null
+export const clientConfigured = (): boolean => resolveClient(BUILT_IN, storedClient()) !== null
+
+function clientCreds(): GoogleClient {
+  const c = resolveClient(BUILT_IN, storedClient())
+  if (!c) throw new Error('Gmail sign-in is not configured in this build.')
+  return c
+}
+
+async function tokenRequest(client: GoogleClient, params: Record<string, string>): Promise<TokenResponse> {
+  const res = isProxy(client)
+    ? await googleFetch(`${client.proxyUrl}/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(params)
+      })
+    : await googleFetch(TOKEN_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ ...params, client_id: client.clientId, client_secret: client.clientSecret }).toString()
+      })
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
   if (!res.ok) throw new TokenError(String(body.error ?? res.status))
   return body as unknown as TokenResponse
@@ -62,9 +86,9 @@ export async function getAccessToken(accountId: number, forceRefresh = false): P
     | undefined
   const refresh = row ? decryptSecret(row.oauth_refresh_enc) : ''
   if (!refresh) throw new Error(REVOKED_MESSAGE)
-  const { clientId, clientSecret } = clientCreds()
+  const client = clientCreds()
   try {
-    const t = await tokenRequest({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId, client_secret: clientSecret })
+    const t = await tokenRequest(client, { grant_type: 'refresh_token', refresh_token: refresh })
     cache.set(accountId, { token: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 })
     return t.access_token
   } catch (e) {
@@ -131,21 +155,47 @@ function waitForCode(clientId: string, challenge: string, state: string): Promis
   })
 }
 
+async function fetchUserInfo(accessToken: string): Promise<{ name?: string } | null> {
+  try {
+    const res = await googleFetch(USERINFO_URL, { headers: { authorization: `Bearer ${accessToken}` } })
+    return res.ok ? ((await res.json()) as { name?: string }) : null
+  } catch {
+    return null
+  }
+}
+
+// Clears the local token (history stays) and asks Google to revoke it; revoking is best effort.
+export async function signOutGmail(accountId: number): Promise<void> {
+  const stored = signOutAccount(getDb(), accountId)
+  forgetAccountToken(accountId)
+  const token = decryptSecret(stored)
+  if (!token) return
+  try {
+    await googleFetch(REVOKE_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token }).toString()
+    })
+  } catch {
+    // offline: the token is already gone from this device
+  }
+}
+
 export async function connectGmail(): Promise<number> {
-  const { clientId, clientSecret } = clientCreds()
+  const client = clientCreds()
   cancelGmailConnect()
   const { verifier, challenge } = createPkcePair()
   const state = base64url(randomBytes(16))
-  const { code, redirectUri } = await waitForCode(clientId, challenge, state)
+  const { code, redirectUri } = await waitForCode(client.clientId, challenge, state)
 
-  const t = await tokenRequest({
-    grant_type: 'authorization_code', code, client_id: clientId, client_secret: clientSecret,
-    code_verifier: verifier, redirect_uri: redirectUri
+  const t = await tokenRequest(client, {
+    grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: redirectUri
   })
   if (!t.refresh_token) {
     throw new Error('Google did not return a refresh token. Remove Email Machine from your Google account permissions and connect again.')
   }
   const { emailAddress } = await getProfile({ getToken: async () => t.access_token, fetchFn: googleFetch })
+  const name = displayNameFor(await fetchUserInfo(t.access_token), emailAddress)
 
   const db = getDb()
   const existing = db.prepare("SELECT id FROM accounts WHERE auth_type='gmail' AND lower(email)=lower(?)").get(emailAddress) as
@@ -153,14 +203,15 @@ export async function connectGmail(): Promise<number> {
     | undefined
   let id: number
   if (existing) {
-    db.prepare("UPDATE accounts SET oauth_refresh_enc=?, auth_error='' WHERE id=?").run(encryptSecret(t.refresh_token), existing.id)
+    db.prepare("UPDATE accounts SET oauth_refresh_enc=?, auth_error='', label=CASE WHEN label='' OR lower(label)=lower(email) THEN ? ELSE label END WHERE id=?")
+      .run(encryptSecret(t.refresh_token), name, existing.id)
     id = existing.id
   } else {
     id = Number(
       db.prepare(
         `INSERT INTO accounts (label, email, host, port, secure, username, password_enc, daily_cap, auth_type, oauth_refresh_enc)
          VALUES (?, ?, 'gmail-api', 0, 1, ?, '', 0, 'gmail', ?)`
-      ).run(emailAddress, emailAddress, emailAddress, encryptSecret(t.refresh_token)).lastInsertRowid
+      ).run(name, emailAddress, emailAddress, encryptSecret(t.refresh_token)).lastInsertRowid
     )
   }
   cache.set(id, { token: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 })

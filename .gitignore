@@ -5,3 +5,9 @@ dist
 *.tsbuildinfo
 .playwright-mcp
 docs
+.env
+.env.*
+!.env.example
+
+PRODUCT.md
+.wrangler

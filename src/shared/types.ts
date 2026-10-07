@@ -10,6 +10,7 @@ export interface Account {
   dailyCap: number
   authType: 'smtp' | 'gmail'
   authError: string
+  signedOut: boolean
 }
 
 export interface AccountInput {
@@ -134,6 +135,8 @@ export interface Settings {
   serverPort: number
   googleClientId: string
   googleClientSecretSet: boolean
+  googleBuiltIn: boolean
+  googleReady: boolean
   followUps: FollowUpConfig
   duplicateWindowDays: number
 }

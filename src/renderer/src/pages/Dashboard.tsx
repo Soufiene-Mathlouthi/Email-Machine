@@ -67,7 +67,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: NavTarget)
   )
 
   const steps: { done: boolean; label: string; target: NavTarget }[] = [
-    { done: accounts.length > 0, label: 'Connect an email account', target: 'Settings' },
+    { done: accounts.some((a) => !a.signedOut), label: 'Sign in with Google', target: 'Settings' },
     { done: templates.length > 0, label: 'Write your first template', target: 'Templates' },
     { done: contacts.length > 0, label: 'Add or import contacts', target: 'Contacts' },
     { done: emails.length > 0, label: 'Create a batch of drafts', target: 'Outbox' }

@@ -7,8 +7,16 @@ files:
   - package.json
 asarUnpack:
   - node_modules/better-sqlite3/**
+publish:
+  provider: github
+  owner: Soufiene-Mathlouthi
+  repo: Email-Machine
 win:
   target: nsis
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
 mac:
   target: dmg
 linux:

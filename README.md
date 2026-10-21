@@ -83,3 +83,14 @@ The Google client secret is never shipped in the app. A small Cloudflare Worker 
 3. Copy `.env.example` to `.env` (git-ignored) and set `MAIN_VITE_GOOGLE_CLIENT_ID` and `MAIN_VITE_TOKEN_PROXY_URL` to the deployed URL, then build.
 
 The Worker only accepts the code-exchange and refresh grants, requires a `http://127.0.0.1:<port>` redirect, forces your client ID, rate-limits per IP and returns only the token fields. Refresh tokens stay on the user's device, encrypted by the OS keychain.
+
+## Installing and updating
+
+`npm run dist` builds a Windows installer into `dist/` (`Email Machine Setup x.y.z.exe`). Installed copies check GitHub Releases on launch and every 4 hours, download new versions in the background and show **Restart to update** in the sidebar (they also install on quit).
+
+To ship an update:
+
+1. Bump `version` in `package.json`, commit, push.
+2. `git tag v0.2.0 && git push origin v0.2.0`. The *Release* workflow builds the installer and publishes it as a GitHub Release.
+
+One-time: add repo secrets `GOOGLE_CLIENT_ID` and `TOKEN_PROXY_URL` (Settings > Secrets > Actions) so CI builds include built-in Gmail sign-in. The installer is unsigned, so Windows SmartScreen warns on first install ("More info > Run anyway"); a code-signing certificate removes that.

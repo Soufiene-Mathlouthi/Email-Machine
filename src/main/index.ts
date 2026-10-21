@@ -5,6 +5,7 @@ import { getDb, getSetting, setSetting } from './db'
 import { registerIpc } from './ipc'
 import { startLocalServer } from './server'
 import { startFollowUpScheduler } from './followups/scheduler'
+import { startAutoUpdates } from './updater'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -46,6 +47,7 @@ app.whenReady().then(() => {
   startLocalServer()
   startFollowUpScheduler()
   createWindow()
+  startAutoUpdates()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

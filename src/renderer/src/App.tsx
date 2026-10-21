@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { invoke, useData } from './lib/api'
 import AccountChip from './components/AccountChip'
+import UpdateChip from './components/UpdateChip'
 import Dashboard from './pages/Dashboard'
 import Outbox from './pages/Outbox'
 import Contacts from './pages/Contacts'
@@ -96,6 +97,7 @@ export default function App() {
           })}
         </nav>
         <MachineStrip q={q} />
+        <UpdateChip />
         <AccountChip accounts={accounts} onOpenSettings={() => setTab('Settings')} />
       </aside>
       <main className="main">

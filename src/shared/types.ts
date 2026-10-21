@@ -176,3 +176,10 @@ export interface FollowUpRunSummary {
 }
 
 export const SERVER_PORT = 47821
+
+export type UpdateState =
+  | { status: 'idle' }
+  | { status: 'available'; version: string }
+  | { status: 'downloading'; version: string; percent: number }
+  | { status: 'ready'; version: string }
+  | { status: 'error'; message: string }

@@ -18,6 +18,7 @@ import { cancelGmailConnect, clientConfigured, connectGmail, forgetAccountToken,
 import { verifyAccount } from './mailer'
 import { buildPreview } from './preview'
 import { broadcast, queueState, startQueue, stopQueue } from './queue'
+import { checkForUpdates, installUpdate, updateState } from './updater'
 
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>): void {
   ipcMain.handle(channel, (_e, ...args) => fn(...(args as A)))
@@ -32,6 +33,11 @@ const duplicateWindow = (): number => Number(getSetting('duplicateWindowDays', '
 
 export function registerIpc(): void {
   const db = getDb()
+
+  // ---------- app updates ----------
+  handle('update:state', () => updateState())
+  handle('update:check', () => checkForUpdates())
+  handle('update:install', () => installUpdate())
 
   // ---------- accounts ----------
   handle('accounts:list', (): Account[] =>

@@ -1,6 +1,6 @@
 {
   "name": "email-machine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop app to send personalized emails one by one from your own accounts",
   "main": "./out/main/index.js",
   "author": "you",

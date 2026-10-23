@@ -19,6 +19,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Require Gmail sign-in secrets
+        shell: bash
+        run: |
+          [ -n "$GOOGLE_CLIENT_ID" ] && [ -n "$TOKEN_PROXY_URL" ] || { echo "::error::Add repo secrets GOOGLE_CLIENT_ID and TOKEN_PROXY_URL"; exit 1; }
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          TOKEN_PROXY_URL: ${{ secrets.TOKEN_PROXY_URL }}
       - run: npx electron-vite build
         env:
           MAIN_VITE_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
